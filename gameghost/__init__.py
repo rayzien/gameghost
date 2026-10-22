@@ -7,6 +7,6 @@ Credits:
 - rayzien: GameGhost creator, handheld touch overlay, Linux uinput virtual gamepad engine
 """
 
-__version__ = "1.4.0"
+__version__ = "1.4.1"
 __author__ = "rayzien, pheonix14"
 __credits__ = ["rayzien", "pheonix14"]

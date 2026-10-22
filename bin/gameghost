@@ -44,6 +44,9 @@ export GALLIUM_DRIVER="llvmpipe"
 export MESA_LOADER_DRIVER_OVERRIDE="llvmpipe"
 export SDL_RENDER_DRIVER="software"
 export SDL_VIDEO_X11_NODIRECTCOLOR="1"
+export SDL_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR="0"
+export MESA_DEBUG="silent"
+export EGL_LOG_LEVEL="fatal"
 
 # In Termux/Android, use system python3 directly
 if [ -n "$TERMUX_VERSION" ] || [ -d "/data/data/com.termux/files" ]; then

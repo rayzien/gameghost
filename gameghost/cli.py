@@ -1,5 +1,17 @@
 import sys
 import os
+
+# Mesa, EGL, DRI2 & Zink error mitigation (prevents choose_pdev / dri2 failures in Termux)
+os.environ["LIBGL_ALWAYS_SOFTWARE"] = "1"
+os.environ["GALLIUM_DRIVER"] = "llvmpipe"
+os.environ["MESA_LOADER_DRIVER_OVERRIDE"] = "llvmpipe"
+os.environ["SDL_RENDER_DRIVER"] = "software"
+os.environ["SDL_VIDEO_X11_NODIRECTCOLOR"] = "1"
+os.environ["SDL_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR"] = "0"
+os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
+os.environ["MESA_DEBUG"] = "silent"
+os.environ["EGL_LOG_LEVEL"] = "fatal"
+
 import time
 import subprocess
 import argparse
@@ -285,7 +297,10 @@ def cmd_client(args):
 
     console.print("[bold green][CLIENT] Starting GameGhost Native Handheld Client (Landscape)...[/bold green]")
     game_to_launch = getattr(args, "game", None)
-    run_client(host_ip=args.ip, fullscreen=args.fullscreen, launch_game=game_to_launch)
+    try:
+        run_client(host_ip=args.ip, fullscreen=args.fullscreen, launch_game=game_to_launch)
+    except KeyboardInterrupt:
+        console.print("\n[yellow][CLIENT] GameGhost handheld client closed.[/yellow]")
 
 
 def cmd_scan(args):
@@ -573,4 +588,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n[INFO] GameGhost exited.")
+        sys.exit(0)

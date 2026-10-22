@@ -310,7 +310,7 @@ class GameGhostViewer:
                                             data = json.loads(msg)
                                             mtype = data.get("type")
                                             if mtype == "pong":
-                                                t_client = data.get("client_time", 0)
+                                                t_client = data.get("client_time") or data.get("time") or 0
                                                 if t_client:
                                                     self.latency_ms = max(1, int(time.time() * 1000 - t_client))
                                             elif mtype == "launch_ack":
@@ -339,14 +339,26 @@ class GameGhostViewer:
                                     # Send heartbeat ping every 2 seconds
                                     now = time.time()
                                     if now - last_ping_time >= 2.0:
-                                        await ws.send(json.dumps({"type": "ping", "client_time": now * 1000}))
+                                        await ws.send(json.dumps({"type": "ping", "time": now * 1000, "client_time": now * 1000}))
                                         last_ping_time = now
                                 except (websockets.ConnectionClosed, asyncio.CancelledError):
                                     break
                                 except Exception:
                                     break
 
-                        await asyncio.gather(_recv_frames(), _send_events())
+                        task_recv = asyncio.create_task(_recv_frames())
+                        task_send = asyncio.create_task(_send_events())
+                        done, pending = await asyncio.wait(
+                            [task_recv, task_send],
+                            return_when=asyncio.FIRST_COMPLETED
+                        )
+                        self.connected = False
+                        for p in pending:
+                            p.cancel()
+                            try:
+                                await p
+                            except (asyncio.CancelledError, Exception):
+                                pass
 
                 except Exception:
                     pass
@@ -577,6 +589,18 @@ class GameGhostViewer:
 
     def start(self):
         """Main Pygame / SDL2 display and event loop (Forced Landscape Mode)."""
+        try:
+            self._start_inner()
+        except KeyboardInterrupt:
+            self.running = False
+        finally:
+            self.running = False
+            try:
+                pygame.quit()
+            except Exception:
+                pass
+
+    def _start_inner(self):
         pygame.init()
         pygame.font.init()
 

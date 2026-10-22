@@ -23,7 +23,7 @@ def get_current_version() -> str:
         from . import __version__
         return __version__
     except Exception:
-        return "1.4.0"
+        return "1.4.1"
 
 
 def get_latest_remote_info(project_dir: Path) -> Tuple[Optional[str], Optional[str]]:
@@ -181,8 +181,13 @@ def check_and_apply_auto_update(silent: bool = True):
     if not (project_dir / ".git").exists():
         return
     try:
+        subprocess.run(
+            ["timeout", "3", "git", "fetch", "-q", "origin", "main"],
+            cwd=str(project_dir),
+            capture_output=True
+        )
         res = subprocess.run(
-            ["timeout", "4", "git", "rev-list", "HEAD..origin/main", "--count"],
+            ["git", "rev-list", "HEAD..origin/main", "--count"],
             cwd=str(project_dir),
             capture_output=True,
             text=True
