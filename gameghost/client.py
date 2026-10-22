@@ -13,7 +13,7 @@ import pygame.gfxdraw
 import websockets
 from rich.console import Console
 
-from .config import load_config
+from .config import load_config, get_last_host, save_last_host, probe_host
 from .discovery import GameDiscovery, scan_hotspot_subnet
 
 console = Console()
@@ -152,7 +152,7 @@ class GameGhostViewer:
                 except Exception as ex:
                     self.connected = False
                     if self.running:
-                        time.sleep(1.5)
+                        await asyncio.sleep(1.5)
 
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
@@ -424,27 +424,37 @@ class GameGhostViewer:
 
 
 def run_client(host_ip: Optional[str] = None, fullscreen: bool = False):
-    """Entry point for native GameGhost client."""
+    """Entry point for native GameGhost handheld client."""
+    if "DISPLAY" not in os.environ and os.path.exists("/data/data/com.termux/files"):
+        os.environ["DISPLAY"] = ":0"
+
     if not host_ip:
-        console.print("[bold yellow][DISCOVERY] Scanning local network for GameGhost host...[/bold yellow]")
-        disc = GameDiscovery()
-        disc.start_listener()
-        host_info = disc.find_host(timeout=2.0)
-        disc.stop()
-
-        if host_info:
-            host_ip = host_info.get("ip")
-            console.print(f"[bold green][FOUND] Detected GameGhost host: {host_ip}[/bold green]")
+        # Fast-path: Check last connected host
+        last = get_last_host()
+        if last and probe_host(last):
+            host_ip = last
+            console.print(f"[bold green][FOUND] Reconnected to last host: {host_ip}[/bold green]")
         else:
-            # Subnet scan fallback
-            candidates = scan_hotspot_subnet(port=8900)
-            if candidates:
-                host_ip = candidates[0]
-                console.print(f"[bold green][FOUND] Detected host via subnet scan: {host_ip}[/bold green]")
-            else:
-                console.print("[bold red][ERR] Could not auto-detect GameGhost host. Please specify IP directly:[/bold red]")
-                console.print("   gameghost client <HOST_IP>")
-                return
+            console.print("[bold yellow][DISCOVERY] Scanning local network for GameGhost host...[/bold yellow]")
+            disc = GameDiscovery()
+            disc.start_listener()
+            host_info = disc.find_host(timeout=2.0)
+            disc.stop()
 
+            if host_info:
+                host_ip = host_info.get("ip")
+                console.print(f"[bold green][FOUND] Detected GameGhost host: {host_ip}[/bold green]")
+            else:
+                # Subnet scan fallback
+                candidates = scan_hotspot_subnet(port=8900)
+                if candidates:
+                    host_ip = candidates[0]
+                    console.print(f"[bold green][FOUND] Detected host via subnet scan: {host_ip}[/bold green]")
+                else:
+                    console.print("[bold red][ERR] Could not auto-detect GameGhost host. Please specify IP directly:[/bold red]")
+                    console.print("   gameghost client <HOST_IP>")
+                    return
+
+    save_last_host(host_ip)
     viewer = GameGhostViewer(host_ip=host_ip, port=8900, fullscreen=fullscreen)
     viewer.start()

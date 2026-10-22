@@ -20,8 +20,10 @@ fi
 export PATH="${HOME}/.local/bin:${PATH}"
 
 # Ensure DISPLAY & XAUTHORITY
-if [ -z "$DISPLAY" ] && [ -S "/tmp/.X11-unix/X0" ]; then
-    export DISPLAY=":0"
+if [ -z "$DISPLAY" ]; then
+    if [ -S "/tmp/.X11-unix/X0" ] || [ -S "${PREFIX}/tmp/.X11-unix/X0" ] || [ -d "/data/data/com.termux/files" ]; then
+        export DISPLAY=":0"
+    fi
 fi
 
 if [ -z "$XAUTHORITY" ]; then
