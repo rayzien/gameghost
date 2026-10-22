@@ -1,6 +1,8 @@
+import os
 import io
 import time
 import json
+import glob
 import asyncio
 import threading
 from typing import Set, Optional
@@ -9,6 +11,7 @@ import websockets
 from rich.console import Console
 
 from .gamepad import VirtualGamepad
+from .launcher import launch_game, list_games
 
 console = Console()
 
@@ -58,15 +61,26 @@ class GameStreamServer:
 
         # Center banner
         now_str = time.strftime("%H:%M:%S")
-        draw.text((w // 2 - 120, h // 2 - 40), f"LIVE SCREEN CLOCK: {now_str}", fill=(240, 245, 255))
-        draw.text((w // 2 - 160, h // 2), "Touch controls on phone will dispatch native gamepad events.", fill=(140, 160, 180))
+        draw.text((w // 2 - 160, h // 2 - 30), "WAITING FOR GAME LAUNCH", fill=(255, 255, 255))
+        draw.text((w // 2 - 100, h // 2 + 5), f"HOST CLOCK: {now_str}", fill=(130, 150, 170))
+        draw.text((w // 2 - 210, h // 2 + 40), "Select a game on phone to start playing immediately.", fill=(0, 210, 255))
 
         buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=self.quality, optimize=False)
+        img.save(buf, format="JPEG", quality=60, optimize=False)
         return buf.getvalue()
 
     def _capture_worker(self):
-        """Dedicated high-speed thread capturing screen frames."""
+        """Dedicated thread continuously grabbing desktop frames at high FPS."""
+        # Ensure display and auth are available for screen capture
+        if "DISPLAY" not in os.environ and os.path.exists("/tmp/.X11-unix/X0"):
+            os.environ["DISPLAY"] = ":0"
+        if "XAUTHORITY" not in os.environ:
+            matches = glob.glob(f"/run/user/{os.getuid()}/.mutter-Xwaylandauth*")
+            if matches:
+                os.environ["XAUTHORITY"] = matches[0]
+            elif os.path.exists(os.path.expanduser("~/.Xauthority")):
+                os.environ["XAUTHORITY"] = os.path.expanduser("~/.Xauthority")
+
         sct = None
         monitor = None
         use_fallback = False
@@ -159,6 +173,23 @@ class GameStreamServer:
 
                         if msg_type in ("btn", "stick", "trigger", "dpad"):
                             self.gamepad.handle_packet(data)
+
+                        elif msg_type == "launch":
+                            game_id = data.get("game", "dmc5")
+                            console.print(f"[bold green][REMOTE LAUNCH][/bold green] Phone requested launch of: {game_id}")
+                            proc = launch_game(game_id)
+                            await websocket.send(json.dumps({
+                                "type": "launch_ack",
+                                "game": game_id,
+                                "success": proc is not None
+                            }))
+
+                        elif msg_type == "list_games":
+                            games = list_games()
+                            await websocket.send(json.dumps({
+                                "type": "games_list",
+                                "games": games
+                            }))
 
                         elif msg_type == "ping":
                             await websocket.send(json.dumps({

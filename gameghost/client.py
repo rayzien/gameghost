@@ -32,17 +32,36 @@ def calculate_letterbox(win_w: int, win_h: int, frame_w: int, frame_h: int) -> T
 class GameGhostViewer:
     """
     Native Pygame / SDL2 Handheld Client.
-    Connects to GameGhost Host, renders video at native FPS,
+    Connects to GameGhost Host, renders video in Landscape mode,
     and provides a native multi-touch on-screen gamepad overlay.
     """
 
-    def __init__(self, host_ip: str, port: int = 8900, fullscreen: bool = False):
+    def __init__(self, host_ip: str, port: int = 8900, fullscreen: bool = True, launch_game: Optional[str] = None):
         self.host_ip = host_ip
         self.port = port
         self.uri = f"ws://{host_ip}:{port}"
         self.fullscreen = fullscreen
+        self.launch_game = launch_game
         self.running = False
         self.connected = False
+
+        # Mesa, EGL, DRI2 & Zink error mitigation:
+        # Prevents 'failed to choose pdev', 'DRI2 screen failed', and 'zink' crashes in Termux / Linux
+        if "LIBGL_ALWAYS_SOFTWARE" not in os.environ:
+            os.environ["LIBGL_ALWAYS_SOFTWARE"] = "1"
+        if "GALLIUM_DRIVER" not in os.environ:
+            os.environ["GALLIUM_DRIVER"] = "llvmpipe"
+        if "MESA_LOADER_DRIVER_OVERRIDE" not in os.environ:
+            os.environ["MESA_LOADER_DRIVER_OVERRIDE"] = "llvmpipe"
+        if "SDL_RENDER_DRIVER" not in os.environ:
+            os.environ["SDL_RENDER_DRIVER"] = "software"
+        os.environ["SDL_VIDEO_X11_NODIRECTCOLOR"] = "1"
+        os.environ["SDL_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR"] = "0"
+
+        # Force Landscape Orientation Environment Hints for SDL2 & Termux-X11
+        os.environ["SDL_VIDEO_ALLOW_SCREENSAVER"] = "0"
+        os.environ["SDL_HINT_ORIENTATIONS"] = "LandscapeLeft LandscapeRight"
+        os.environ["SDL_HINT_QTWAYLAND_CONTENT_ORIENTATION"] = "landscape"
 
         self.win_w = 1280
         self.win_h = 720
@@ -54,58 +73,76 @@ class GameGhostViewer:
         self.last_fps_time = time.time()
         self.show_overlay = True
 
-        # Multi-touch tracking: finger_id -> {"target": "left_stick|right_stick|btn", "data": ...}
+        # Multi-touch tracking: finger_id -> {"target": "left_stick|right_stick|button", "data": ...}
         self.active_touches: Dict[int, Dict[str, Any]] = {}
 
-        # Touch Layout geometry (calculated dynamically on resize)
+        # Touch Layout geometry
         self.controls: Dict[str, Any] = {}
-        self.left_stick = {"base_x": 0, "base_y": 0, "knob_x": 0, "knob_y": 0, "radius": 70, "val_x": 0.0, "val_y": 0.0}
-        self.right_stick = {"base_x": 0, "base_y": 0, "knob_x": 0, "knob_y": 0, "radius": 70, "val_x": 0.0, "val_y": 0.0}
+        self.left_stick = {"base_x": 0, "base_y": 0, "knob_x": 0, "knob_y": 0, "radius": 75, "val_x": 0.0, "val_y": 0.0}
+        self.right_stick = {"base_x": 0, "base_y": 0, "knob_x": 0, "knob_y": 0, "radius": 75, "val_x": 0.0, "val_y": 0.0}
         self.buttons: Dict[str, Dict[str, Any]] = {}
 
     def _update_layout(self):
-        """Update virtual gamepad positions relative to screen dimensions."""
+        """Update virtual gamepad positions relative to screen dimensions (Landscape layout)."""
         w, h = self.win_w, self.win_h
 
-        # Left Stick (Bottom Left)
-        ls_radius = int(min(w, h) * 0.11)
-        ls_cx = int(w * 0.14)
-        ls_cy = int(h * 0.74)
-        self.left_stick["radius"] = ls_radius
-        self.left_stick["base_x"] = ls_cx
-        self.left_stick["base_y"] = ls_cy
-        self.left_stick["knob_x"] = ls_cx
-        self.left_stick["knob_y"] = ls_cy
+        # Left Thumbstick (Bottom Left)
+        ls_x = int(w * 0.14)
+        ls_y = int(h * 0.72)
+        ls_r = int(min(w, h) * 0.14)
+        self.left_stick = {
+            "base_x": ls_x,
+            "base_y": ls_y,
+            "knob_x": ls_x,
+            "knob_y": ls_y,
+            "radius": ls_r,
+            "val_x": 0.0,
+            "val_y": 0.0
+        }
 
-        # Right Stick (Bottom Right)
-        rs_radius = ls_radius
-        rs_cx = int(w * 0.86)
-        rs_cy = int(h * 0.74)
-        self.right_stick["radius"] = rs_radius
-        self.right_stick["base_x"] = rs_cx
-        self.right_stick["base_y"] = rs_cy
-        self.right_stick["knob_x"] = rs_cx
-        self.right_stick["knob_y"] = rs_cy
+        # Right Thumbstick (Bottom Right)
+        rs_x = int(w * 0.86)
+        rs_y = int(h * 0.72)
+        rs_r = int(min(w, h) * 0.14)
+        self.right_stick = {
+            "base_x": rs_x,
+            "base_y": rs_y,
+            "knob_x": rs_x,
+            "knob_y": rs_y,
+            "radius": rs_r,
+            "val_x": 0.0,
+            "val_y": 0.0
+        }
 
-        btn_r = int(min(w, h) * 0.052)
+        # Face Buttons (Y, X, B, A)
+        btn_r = int(min(w, h) * 0.065)
+        face_cx = int(w * 0.87)
+        face_cy = int(h * 0.32)
+        spacing = int(btn_r * 2.2)
+
+        # D-Pad
+        dpad_cx = int(w * 0.13)
+        dpad_cy = int(h * 0.32)
+        dpad_s = int(btn_r * 2.0)
+
         self.buttons = {
-            # Action Cluster (Above Right Stick)
-            "Y": {"x": int(w * 0.86), "y": int(h * 0.35), "r": btn_r, "type": "btn", "name": "Y", "color": (0, 230, 118), "label": "Y"},
-            "X": {"x": int(w * 0.79), "y": int(h * 0.44), "r": btn_r, "type": "btn", "name": "X", "color": (245, 0, 87), "label": "X"},
-            "B": {"x": int(w * 0.93), "y": int(h * 0.44), "r": btn_r, "type": "btn", "name": "B", "color": (255, 23, 68), "label": "B"},
-            "A": {"x": int(w * 0.86), "y": int(h * 0.53), "r": btn_r, "type": "btn", "name": "A", "color": (41, 121, 255), "label": "A"},
+            # Face Buttons
+            "Y": {"x": face_cx, "y": face_cy - spacing, "r": btn_r, "type": "btn", "name": "Y", "color": (255, 220, 0), "label": "Y"},
+            "A": {"x": face_cx, "y": face_cy + spacing, "r": btn_r, "type": "btn", "name": "A", "color": (50, 220, 50), "label": "A"},
+            "X": {"x": face_cx - spacing, "y": face_cy, "r": btn_r, "type": "btn", "name": "X", "color": (50, 150, 255), "label": "X"},
+            "B": {"x": face_cx + spacing, "y": face_cy, "r": btn_r, "type": "btn", "name": "B", "color": (255, 60, 60), "label": "B"},
 
-            # D-Pad Cluster (Above Left Stick)
-            "DPAD_UP":    {"x": int(w * 0.14), "y": int(h * 0.35), "r": btn_r, "type": "dpad", "dir": (0, -1), "color": (160, 180, 210), "label": "U"},
-            "DPAD_LEFT":  {"x": int(w * 0.07), "y": int(h * 0.44), "r": btn_r, "type": "dpad", "dir": (-1, 0), "color": (160, 180, 210), "label": "L"},
-            "DPAD_RIGHT": {"x": int(w * 0.21), "y": int(h * 0.44), "r": btn_r, "type": "dpad", "dir": (1, 0), "color": (160, 180, 210), "label": "R"},
-            "DPAD_DOWN":  {"x": int(w * 0.14), "y": int(h * 0.53), "r": btn_r, "type": "dpad", "dir": (0, 1), "color": (160, 180, 210), "label": "D"},
+            # D-Pad
+            "DPAD_UP":    {"x": dpad_cx, "y": dpad_cy - dpad_s, "r": btn_r, "type": "dpad", "name": "DPAD_UP", "dir": "up", "color": (160, 160, 160), "label": "^"},
+            "DPAD_DOWN":  {"x": dpad_cx, "y": dpad_cy + dpad_s, "r": btn_r, "type": "dpad", "name": "DPAD_DOWN", "dir": "down", "color": (160, 160, 160), "label": "v"},
+            "DPAD_LEFT":  {"x": dpad_cx - dpad_s, "y": dpad_cy, "r": btn_r, "type": "dpad", "name": "DPAD_LEFT", "dir": "left", "color": (160, 160, 160), "label": "<"},
+            "DPAD_RIGHT": {"x": dpad_cx + dpad_s, "y": dpad_cy, "r": btn_r, "type": "dpad", "name": "DPAD_RIGHT", "dir": "right", "color": (160, 160, 160), "label": ">"},
 
-            # Shoulders (Top Corners)
-            "L1": {"x": int(w * 0.18), "y": int(h * 0.12), "r": int(btn_r * 1.1), "type": "btn", "name": "L1", "color": (0, 210, 255), "label": "L1"},
-            "L2": {"x": int(w * 0.07), "y": int(h * 0.12), "r": int(btn_r * 1.1), "type": "trigger", "name": "L2", "color": (0, 210, 255), "label": "L2"},
-            "R1": {"x": int(w * 0.82), "y": int(h * 0.12), "r": int(btn_r * 1.1), "type": "btn", "name": "R1", "color": (0, 210, 255), "label": "R1"},
-            "R2": {"x": int(w * 0.93), "y": int(h * 0.12), "r": int(btn_r * 1.1), "type": "trigger", "name": "R2", "color": (0, 210, 255), "label": "R2"},
+            # Shoulders & Triggers
+            "L1": {"x": int(w * 0.12), "y": int(h * 0.08), "r": int(btn_r * 1.1), "type": "btn", "name": "LB", "color": (0, 210, 255), "label": "L1"},
+            "L2": {"x": int(w * 0.23), "y": int(h * 0.08), "r": int(btn_r * 1.1), "type": "trigger", "name": "LT", "color": (0, 170, 230), "label": "L2"},
+            "R1": {"x": int(w * 0.88), "y": int(h * 0.08), "r": int(btn_r * 1.1), "type": "btn", "name": "RB", "color": (0, 210, 255), "label": "R1"},
+            "R2": {"x": int(w * 0.77), "y": int(h * 0.08), "r": int(btn_r * 1.1), "type": "trigger", "name": "RT", "color": (0, 170, 230), "label": "R2"},
 
             # Center System Buttons
             "SELECT": {"x": int(w * 0.42), "y": int(h * 0.08), "r": int(btn_r * 0.7), "type": "btn", "name": "SELECT", "color": (200, 200, 200), "label": "SHR"},
@@ -128,8 +165,13 @@ class GameGhostViewer:
                         self.connected = True
                         console.print(f"[bold green][CONNECTED][/bold green] Stream active: {self.uri}")
 
+                        # Trigger remote launch if game specified
+                        if self.launch_game:
+                            await ws.send(json.dumps({"type": "launch", "game": self.launch_game}))
+                            console.print(f"[bold green][REMOTE LAUNCH][/bold green] Requested PC to launch: {self.launch_game}")
+
                         async def _recv_frames():
-                            while self.running:
+                            while self.running and self.connected:
                                 msg = await ws.recv()
                                 if isinstance(msg, bytes):
                                     if self.frame_queue.full():
@@ -138,14 +180,24 @@ class GameGhostViewer:
                                         except queue.Empty:
                                             pass
                                     self.frame_queue.put(msg)
+                                elif isinstance(msg, str):
+                                    try:
+                                        data = json.loads(msg)
+                                        if data.get("type") == "launch_ack":
+                                            succ = data.get("success", False)
+                                            g = data.get("game", "")
+                                            status = "Started successfully" if succ else "Failed to start"
+                                            console.print(f"[bold green][PC RESPONSE][/bold green] {g}: {status}")
+                                    except Exception:
+                                        pass
 
                         async def _send_events():
-                            while self.running:
+                            while self.running and self.connected:
                                 try:
                                     packet = self.out_queue.get_nowait()
                                     await ws.send(json.dumps(packet))
                                 except queue.Empty:
-                                    await asyncio.sleep(0.005)
+                                    await asyncio.sleep(0.004)
 
                         await asyncio.gather(_recv_frames(), _send_events())
 
@@ -216,111 +268,112 @@ class GameGhostViewer:
             self.send_input({"type": "stick", "which": "right", "x": 0.0, "y": 0.0})
         elif target == "button":
             bkey = touch.get("bkey")
-            binfo = self.buttons.get(bkey)
-            if binfo:
-                self._dispatch_button(binfo, 0)
+            if bkey in self.buttons:
+                self._dispatch_button(self.buttons[bkey], 0)
 
     def _update_stick(self, which: str, px: float, py: float):
-        stick = self.left_stick if which == "left" else self.right_stick
-        bx, by = stick["base_x"], stick["base_y"]
-        dx, dy = px - bx, py - by
+        st = self.left_stick if which == "left" else self.right_stick
+        dx = px - st["base_x"]
+        dy = py - st["base_y"]
         dist = math.hypot(dx, dy)
-        max_r = stick["radius"]
+        max_r = st["radius"]
 
         if dist > max_r:
-            dx = (dx / dist) * max_r
-            dy = (dy / dist) * max_r
+            angle = math.atan2(dy, dx)
+            dx = math.cos(angle) * max_r
+            dy = math.sin(angle) * max_r
 
-        stick["knob_x"] = bx + dx
-        stick["knob_y"] = by + dy
+        st["knob_x"] = int(st["base_x"] + dx)
+        st["knob_y"] = int(st["base_y"] + dy)
 
-        norm_x = max(-1.0, min(1.0, dx / max_r))
-        norm_y = max(-1.0, min(1.0, dy / max_r))
-
-        # Deadzone
-        if abs(norm_x) < 0.05: norm_x = 0.0
-        if abs(norm_y) < 0.05: norm_y = 0.0
-
-        self.send_input({
-            "type": "stick",
-            "which": which,
-            "x": round(norm_x, 3),
-            "y": round(norm_y, 3)
-        })
+        norm_x = dx / max_r
+        norm_y = -(dy / max_r)
+        self.send_input({"type": "stick", "which": which, "x": norm_x, "y": norm_y})
 
     def _dispatch_button(self, binfo: dict, val: int):
         btype = binfo["type"]
         if btype == "btn":
             self.send_input({"type": "btn", "name": binfo["name"], "val": val})
         elif btype == "trigger":
-            self.send_input({"type": "trigger", "name": binfo["name"], "val": float(val)})
+            self.send_input({"type": "trigger", "name": binfo["name"], "val": 1.0 if val else 0.0})
         elif btype == "dpad":
-            dx = binfo["dir"][0] if val else 0
-            dy = binfo["dir"][1] if val else 0
-            self.send_input({"type": "dpad", "x": dx, "y": dy})
+            self.send_input({"type": "dpad", "dir": binfo["dir"], "val": val})
 
     def _draw_hud(self, surface: pygame.Surface, font: pygame.font.Font):
-        """Draw the semi-transparent handheld overlay directly onto the screen."""
         if not self.show_overlay:
             return
 
         overlay = pygame.Surface((self.win_w, self.win_h), pygame.SRCALPHA)
 
-        # 1. Left Analog Stick
+        # Draw Left Stick
         ls = self.left_stick
-        pygame.gfxdraw.filled_circle(overlay, ls["base_x"], ls["base_y"], ls["radius"], (12, 18, 28, 140))
+        pygame.gfxdraw.filled_circle(overlay, ls["base_x"], ls["base_y"], ls["radius"], (30, 40, 55, 120))
         pygame.gfxdraw.aacircle(overlay, ls["base_x"], ls["base_y"], ls["radius"], (0, 210, 255, 180))
-        # Knob
-        knob_r = int(ls["radius"] * 0.48)
-        pygame.gfxdraw.filled_circle(overlay, int(ls["knob_x"]), int(ls["knob_y"]), knob_r, (25, 35, 52, 230))
-        pygame.gfxdraw.aacircle(overlay, int(ls["knob_x"]), int(ls["knob_y"]), knob_r, (0, 210, 255, 255))
-        txt_ls = font.render("LS", True, (0, 210, 255))
-        overlay.blit(txt_ls, (int(ls["knob_x"] - txt_ls.get_width() / 2), int(ls["knob_y"] - txt_ls.get_height() / 2)))
+        knob_r = int(ls["radius"] * 0.45)
+        pygame.gfxdraw.filled_circle(overlay, ls["knob_x"], ls["knob_y"], knob_r, (0, 210, 255, 190))
+        pygame.gfxdraw.aacircle(overlay, ls["knob_x"], ls["knob_y"], knob_r, (255, 255, 255, 220))
 
-        # 2. Right Analog Stick
+        # Draw Right Stick
         rs = self.right_stick
-        pygame.gfxdraw.filled_circle(overlay, rs["base_x"], rs["base_y"], rs["radius"], (12, 18, 28, 140))
+        pygame.gfxdraw.filled_circle(overlay, rs["base_x"], rs["base_y"], rs["radius"], (30, 40, 55, 120))
         pygame.gfxdraw.aacircle(overlay, rs["base_x"], rs["base_y"], rs["radius"], (0, 210, 255, 180))
-        # Knob
-        pygame.gfxdraw.filled_circle(overlay, int(rs["knob_x"]), int(rs["knob_y"]), knob_r, (25, 35, 52, 230))
-        pygame.gfxdraw.aacircle(overlay, int(rs["knob_x"]), int(rs["knob_y"]), knob_r, (0, 210, 255, 255))
-        txt_rs = font.render("RS", True, (0, 210, 255))
-        overlay.blit(txt_rs, (int(rs["knob_x"] - txt_rs.get_width() / 2), int(rs["knob_y"] - txt_rs.get_height() / 2)))
+        pygame.gfxdraw.filled_circle(overlay, rs["knob_x"], rs["knob_y"], knob_r, (0, 210, 255, 190))
+        pygame.gfxdraw.aacircle(overlay, rs["knob_x"], rs["knob_y"], knob_r, (255, 255, 255, 220))
 
-        # 3. Buttons (D-Pad, Actions, Shoulders, System)
-        active_targets = [t.get("bkey") for t in self.active_touches.values() if t.get("target") == "button"]
-
+        # Draw Action Buttons
         for bkey, binfo in self.buttons.items():
             bx, by, br = binfo["x"], binfo["y"], binfo["r"]
             color = binfo["color"]
-            is_pressed = bkey in active_targets
+            pygame.gfxdraw.filled_circle(overlay, bx, by, br, (color[0], color[1], color[2], 120))
+            pygame.gfxdraw.aacircle(overlay, bx, by, br, (color[0], color[1], color[2], 220))
 
-            bg_alpha = 220 if is_pressed else 130
-            pygame.gfxdraw.filled_circle(overlay, bx, by, br, (20, 26, 38, bg_alpha))
-            border_col = (color[0], color[1], color[2], 255 if is_pressed else 180)
-            pygame.gfxdraw.aacircle(overlay, bx, by, br, border_col)
-
-            lbl = font.render(binfo["label"], True, color if not is_pressed else (255, 255, 255))
+            lbl = font.render(binfo["label"], True, (255, 255, 255))
             overlay.blit(lbl, (bx - lbl.get_width() // 2, by - lbl.get_height() // 2))
 
-        # 4. Status Bar
-        status_txt = f"{self.fps} FPS | Host: {self.host_ip}" if self.connected else "Connecting..."
-        status_surf = font.render(status_txt, True, (0, 210, 255) if self.connected else (255, 60, 60))
-        overlay.blit(status_surf, (16, 12))
+        # Status text
+        status_color = (0, 230, 118) if self.connected else (255, 82, 82)
+        status_text = f"GAMEGHOST // FPS: {self.fps} | {'CONNECTED' if self.connected else 'SEARCHING'}"
+        lbl_status = font.render(status_text, True, status_color)
+        overlay.blit(lbl_status, (20, 20))
 
         surface.blit(overlay, (0, 0))
 
     def start(self):
-        """Main Pygame / SDL2 display and event loop."""
+        """Main Pygame / SDL2 display and event loop (Forced Landscape Mode)."""
+        # Set landscape orientation hints before initializing pygame display
+        os.environ["SDL_VIDEO_ALLOW_SCREENSAVER"] = "0"
+        os.environ["SDL_HINT_ORIENTATIONS"] = "LandscapeLeft LandscapeRight"
+        os.environ["SDL_HINT_QTWAYLAND_CONTENT_ORIENTATION"] = "landscape"
+
         pygame.init()
         pygame.font.init()
 
-        flags = pygame.DOUBLEBUF | pygame.HWSURFACE
+        # Query native display resolution to ensure landscape
+        try:
+            display_info = pygame.display.Info()
+            dw = display_info.current_w
+            dh = display_info.current_h
+            if dw > 0 and dh > 0:
+                # Force landscape: width must always be the larger dimension
+                self.win_w = max(dw, dh)
+                self.win_h = min(dw, dh)
+            else:
+                self.win_w = 1280
+                self.win_h = 720
+        except Exception:
+            self.win_w = 1280
+            self.win_h = 720
+
+        flags = pygame.DOUBLEBUF | pygame.RESIZABLE
         if self.fullscreen:
             flags |= pygame.FULLSCREEN
 
-        screen = pygame.display.set_mode((self.win_w, self.win_h), flags)
-        pygame.display.set_caption("GameGhost Handheld Portal")
+        try:
+            screen = pygame.display.set_mode((self.win_w, self.win_h), flags)
+        except pygame.error:
+            flags = pygame.DOUBLEBUF
+            screen = pygame.display.set_mode((self.win_w, self.win_h), flags)
+        pygame.display.set_caption("GameGhost Handheld Portal (Landscape)")
         font = pygame.font.SysFont("monospace", 14, bold=True)
 
         self._update_layout()
@@ -331,7 +384,6 @@ class GameGhostViewer:
         t_net.start()
 
         clock = pygame.time.Clock()
-
         current_game_surface: Optional[pygame.Surface] = None
 
         while self.running:
@@ -341,7 +393,10 @@ class GameGhostViewer:
                     self.running = False
 
                 elif event.type == pygame.VIDEORESIZE:
-                    self.win_w, self.win_h = event.w, event.h
+                    # Enforce landscape dimensions
+                    self.win_w = max(event.w, event.h)
+                    self.win_h = min(event.w, event.h)
+                    screen = pygame.display.set_mode((self.win_w, self.win_h), flags)
                     self._update_layout()
 
                 # Native Multi-Touch Events (SDL2 / Termux / Touchscreens)
@@ -372,10 +427,13 @@ class GameGhostViewer:
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_F11:
                         self.fullscreen = not self.fullscreen
-                        flags_fs = pygame.DOUBLEBUF | pygame.HWSURFACE
+                        flags_fs = pygame.DOUBLEBUF | pygame.RESIZABLE
                         if self.fullscreen:
                             flags_fs |= pygame.FULLSCREEN
-                        screen = pygame.display.set_mode((self.win_w, self.win_h), flags_fs)
+                        try:
+                            screen = pygame.display.set_mode((self.win_w, self.win_h), flags_fs)
+                        except pygame.error:
+                            pass
                         self._update_layout()
                     elif event.key == pygame.K_h:
                         self.show_overlay = not self.show_overlay
@@ -423,8 +481,8 @@ class GameGhostViewer:
         pygame.quit()
 
 
-def run_client(host_ip: Optional[str] = None, fullscreen: bool = False):
-    """Entry point for native GameGhost handheld client."""
+def run_client(host_ip: Optional[str] = None, fullscreen: bool = True, launch_game: Optional[str] = None):
+    """Entry point for native GameGhost handheld client in Landscape Mode."""
     if "DISPLAY" not in os.environ and os.path.exists("/data/data/com.termux/files"):
         os.environ["DISPLAY"] = ":0"
 
@@ -433,9 +491,9 @@ def run_client(host_ip: Optional[str] = None, fullscreen: bool = False):
         last = get_last_host()
         if last and probe_host(last):
             host_ip = last
-            console.print(f"[bold green][FOUND] Reconnected to last host: {host_ip}[/bold green]")
+            console.print(f"[bold green][FOUND] Reconnected to last PC host: {host_ip}[/bold green]")
         else:
-            console.print("[bold yellow][DISCOVERY] Scanning local network for GameGhost host...[/bold yellow]")
+            console.print("[bold yellow][DISCOVERY] Looking for Gaming PC host on network...[/bold yellow]")
             disc = GameDiscovery()
             disc.start_listener()
             host_info = disc.find_host(timeout=2.0)
@@ -443,7 +501,7 @@ def run_client(host_ip: Optional[str] = None, fullscreen: bool = False):
 
             if host_info:
                 host_ip = host_info.get("ip")
-                console.print(f"[bold green][FOUND] Detected GameGhost host: {host_ip}[/bold green]")
+                console.print(f"[bold green][FOUND] Detected Gaming PC host: {host_ip}[/bold green]")
             else:
                 # Subnet scan fallback
                 candidates = scan_hotspot_subnet(port=8900)
@@ -456,5 +514,5 @@ def run_client(host_ip: Optional[str] = None, fullscreen: bool = False):
                     return
 
     save_last_host(host_ip)
-    viewer = GameGhostViewer(host_ip=host_ip, port=8900, fullscreen=fullscreen)
+    viewer = GameGhostViewer(host_ip=host_ip, port=8900, fullscreen=fullscreen, launch_game=launch_game)
     viewer.start()

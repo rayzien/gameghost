@@ -46,12 +46,19 @@ EOF
     chmod +x "${DESKTOP_DIR}/GameGhost.desktop"
 fi
 
+# 4. On Linux PC host, install and enable 24/7 background systemd service
+if [ -z "$TERMUX_VERSION" ] && [ ! -d "/data/data/com.termux/files" ] && command -v systemctl >/dev/null 2>&1; then
+    echo "[INFO] Enabling background systemd service for 24/7 streaming..."
+    "${BIN_DIR}/gameghost" service install >/dev/null 2>&1 || true
+fi
+
 echo "==> GameGhost installation complete!"
 echo "You can now run 'gameghost' or quick alias 'gg' from anywhere:"
 echo "  gg             - Interactive Touch Menu on your phone"
-echo "  gg client      - Launch native SDL2 touch client on phone"
+echo "  gg dmc5        - Launch Devil May Cry 5 & cast to phone"
+echo "  gg client      - Launch native SDL2 touch client in Landscape mode"
 echo "  gg scan        - Scan network for PC host"
-echo "  gg dmc5        - Launch Devil May Cry 5 & stream"
-echo "  gg host        - Start PC streaming host"
+echo "  gg start       - Start PC streaming host in background"
+echo "  gg stop        - Stop PC streaming host"
 echo "  gg update      - Check and apply latest updates from GitHub"
 echo "  gg status      - Show connection status"

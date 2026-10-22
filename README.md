@@ -13,11 +13,12 @@
 ```
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Version: 1.2.0](https://img.shields.io/badge/Version-1.2.0-brightgreen.svg)](https://github.com/rayzien/gameghost/releases)
+[![Version: 1.3.0](https://img.shields.io/badge/Version-1.3.0-brightgreen.svg)](https://github.com/rayzien/gameghost/releases)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-brightgreen.svg)](https://www.python.org/)
 [![Platform: Linux](https://img.shields.io/badge/Platform-Linux-orange.svg)](https://kernel.org)
 [![Client: Termux / Native SDL2](https://img.shields.io/badge/Client-Termux%20%7C%20Native%20SDL2-purple.svg)](https://termux.dev)
 [![Virtual Gamepad: uinput Xbox 360](https://img.shields.io/badge/Gamepad-uinput%20Xbox%20360-success.svg)](https://www.kernel.org/doc/html/latest/input/uinput.html)
+[![Orientation: Forced Landscape](https://img.shields.io/badge/Display-Forced%20Landscape-blueviolet.svg)](https://github.com/rayzien/gameghost)
 
 ---
 
@@ -25,28 +26,47 @@
 
 **GameGhost** is an open-source, ultra-low latency PC game casting and mobile handheld controller system. It turns any Android smartphone running Termux into a dedicated handheld console (similar to the PlayStation Portal or Steam Deck) to stream and control PC games over local Wi-Fi or mobile hotspot.
 
+**Opposite of scrcpy: GameGhost mirrors your PC to your phone, not phone to PC.**
+
 **Zero HTML. Zero Web Browsers. Zero scrcpy.**
 
 Built on the high-efficiency architecture of **CPUGhost**, GameGhost operates as a pure native client-server system:
-* **Host (Gaming PC)**: Captures game video at native refresh rates, streams over optimized binary WebSockets, and maps incoming packets directly into a hardware-level virtual Xbox 360 gamepad via Linux `/dev/uinput`.
-* **Client (Phone / Termux)**: A native SDL2/Pygame-CE handheld viewer with direct framebuffer rendering, auto-discovery over hotspot Wi-Fi, and a custom multi-touch on-screen controller overlay.
-* **Auto-Update System**: Derived from CPUGhost, GameGhost automatically checks GitHub (`origin/main`) and seamlessly applies updates on launch, or via `gameghost update`.
+* **Background Host Daemon (Gaming PC)**: Runs continuously 24/7 in the background (via systemd user service `gameghost.service` or `gameghost start`). Captures game video at native refresh rates, streams over optimized binary WebSockets, and maps incoming packets directly into a hardware-level virtual Xbox 360 gamepad via Linux `/dev/uinput`.
+* **Handheld Client (Phone / Termux)**: A native SDL2/Pygame-CE handheld viewer with direct framebuffer rendering, auto-discovery over hotspot Wi-Fi, and a custom multi-touch on-screen controller overlay locked into **Forced Landscape Mode**.
+* **Remote Game Triggering**: Typing `gg dmc5` or any game shortcut on your phone automatically discovers the PC host on the network, triggers the game to launch on your PC, and immediately mirrors the game to your phone screen!
+* **CPUGhost Auto-Update Engine**: Automatically syncs the latest releases and fixes from GitHub on both Host and Client without manual intervention.
 
 ---
 
 ## Search & Discovery Keywords (SEO)
 
-`pc-game-streaming` `handheld-console` `playstation-portal-alternative` `steam-deck-alternative` `android-game-streaming` `termux-gaming` `termux-x11` `uinput-virtual-controller` `evdev-gamepad` `devil-may-cry-5-remote-play` `linux-remote-play` `touch-screen-gamepad` `low-latency-streamer` `local-hotspot-gaming` `native-sdl2-client` `auto-update-client`
+`pc-to-phone-mirroring` `pc-game-streaming` `handheld-console` `playstation-portal-alternative` `steam-deck-alternative` `android-game-streaming` `termux-gaming` `termux-x11` `uinput-virtual-controller` `evdev-gamepad` `devil-may-cry-5-remote-play` `linux-remote-play` `touch-screen-gamepad` `low-latency-streamer` `local-hotspot-gaming` `native-sdl2-client` `auto-update-client` `forced-landscape-streaming`
 
 ---
 
 ## Key Highlights
 
-1. **Native Client Engine (No Web Browser Overhead)**
-   * Built on SDL2 / Pygame-CE running directly in Termux (via Termux-X11) or native Linux.
-   * Direct hardware-accelerated surface rendering with zero DOM, zero browser address bars, and zero gesture interference.
+1. **Always-Running Background Daemon**
+   * Configured as a 24/7 background systemd user service (`gameghost.service`).
+   * Starts on system boot and remains active in background so you never need to manually start a server when you want to play.
+   * Manageable via simple commands: `gameghost start`, `gameghost stop`, `gameghost restart`, `gameghost status`.
 
-2. **Native Multi-Touch On-Screen Gamepad**
+2. **Always Launches in Landscape Mode**
+   * Locks display dimensions to landscape (`width >= height`) with automatic aspect-ratio preservation.
+   * Automatically sets SDL2 orientation hints (`SDL_HINT_ORIENTATIONS=LandscapeLeft LandscapeRight`).
+   * In Termux-X11, locks directly into full-screen horizontal handheld layout.
+
+3. **Remote Game Launching from Phone**
+   * Running `gg dmc5` on your phone in Termux automatically finds your PC host on the network, sends a remote start command, and begins streaming the game to your phone immediately.
+   * Supports all your favorite PC titles:
+     * **Devil May Cry 5** (`gg dmc5`)
+     * **Sekiro: Shadows Die Twice** (`gg sekiro`)
+     * **Tekken 8** (`gg tekken8`)
+     * **Mortal Kombat 11** (`gg mk11`)
+     * **Metal Gear Rising: Revengeance** (`gg mgr`)
+     * **Rise of the Tomb Raider** (`gg rottr`)
+
+4. **Native Multi-Touch On-Screen Gamepad**
    * Uses low-level SDL2 multi-touch events (`pygame.FINGERDOWN`, `pygame.FINGERMOTION`, `pygame.FINGERUP`).
    * **Dual Virtual Analog Thumbsticks**: Left Stick (LS - Movement) and Right Stick (RS - Camera).
    * **Action Cluster**: Y (Triangle), X (Square), B (Circle), A (Cross).
@@ -54,48 +74,38 @@ Built on the high-efficiency architecture of **CPUGhost**, GameGhost operates as
    * **Shoulders & Triggers**: L1 (LB), R1 (RB), L2 (LT analog trigger), R2 (RT analog trigger).
    * **System Buttons**: Select / Share, Start / Options, Home / Guide.
 
-3. **Hardware Virtual Xbox 360 Gamepad (Linux uinput)**
+5. **Hardware Virtual Xbox 360 Gamepad (Linux uinput)**
    * Emulates a native Microsoft Xbox 360 controller directly in the Linux kernel via `/dev/uinput`.
    * Recognized automatically by Steam, Proton, Wine, and native Linux games.
 
-4. **CPUGhost-Derived Auto-Update Engine**
+6. **CPUGhost-Derived Auto-Update Engine**
    * Modeled directly after CPUGhost's auto-update system.
-   * Every launch of `gameghost host` or `gameghost client` silently queries GitHub (`rayzien/gameghost`) for the latest release commits and applies updates automatically.
+   * Every launch silently checks GitHub (`rayzien/gameghost`) for the latest release commits and applies updates automatically.
    * Can also be run explicitly via `gameghost update`.
-
-5. **Zero-Configuration Hotspot Auto-Discovery**
-   * Employs UDP discovery beacons and concurrent subnet scanning.
-   * Just run `gameghost client` on your phone; it automatically locates your PC host on the mobile hotspot in under two seconds.
 
 ---
 
 ## Quick Start
 
 ### 1. On Your Gaming PC (Host)
-Launch the GameGhost host:
+
+Run setup once:
 ```bash
-gameghost host
+git clone https://github.com/rayzien/gameghost.git
+cd gameghost
+./setup.sh
+```
+`setup.sh` automatically configures permissions and enables the background systemd service so GameGhost is always active!
+
+To verify status:
+```bash
+gameghost status
 ```
 
-Or launch Devil May Cry 5 directly with streaming enabled:
+To start or stop the background host manually:
 ```bash
-gameghost dmc5
-```
-
-Terminal output:
-```text
-==================================================================
-       GAMEGHOST HANDHELD STREAMING HOST ONLINE
-==================================================================
- [HOST IP]              : 10.176.124.73
- [STREAM WEBSOCKET]     : ws://10.176.124.73:8900
- [AUDIO WEBSOCKET]      : ws://10.176.124.73:8901
- [VIRTUAL CONTROLLER]   : Active (Hardware Xbox 360 Pad via uinput)
- [HOTSPOT BEACON]       : Active (UDP Auto-Discovery)
-==================================================================
-
-[CLIENT CONNECT] On your phone (Termux), run:
-  gameghost client 10.176.124.73
+gameghost start    # Start host in background
+gameghost stop     # Stop background host
 ```
 
 ---
@@ -111,20 +121,29 @@ pkg install -y termux-x11-nightly python-pygame
 pip install websockets rich pillow
 ```
 
-#### B. Clone & Launch GameGhost Client
+#### B. Clone & Install GameGhost
 ```bash
 git clone https://github.com/rayzien/gameghost.git
 cd gameghost
 ./setup.sh
-
-# Auto-discovers PC host over hotspot Wi-Fi:
-gameghost client
-
-# Or connect to specific host IP:
-gameghost client 10.176.124.73
 ```
 
-Open the **Termux-X11** app on your phone. You will see the game stream full-screen with the on-screen touch controller overlay active.
+#### C. Cast and Play Any Game on Your Phone
+Open **Termux-X11** on your phone, then in Termux run:
+```bash
+# Launch Devil May Cry 5 and cast to phone in Landscape mode:
+gg dmc5
+
+# Launch Sekiro:
+gg sekiro
+
+# Launch Tekken 8:
+gg tekken8
+
+# Or open the interactive mobile touch menu:
+gg
+```
+GameGhost automatically finds your PC host, triggers the game on your PC, and starts streaming to your phone in landscape mode!
 
 ---
 
@@ -141,26 +160,6 @@ gameghost update --check   # Check if updates are available without applying
 gameghost update --force   # Force reset to latest upstream main branch
 ```
 
-The system automatically checks GitHub (`origin/main`) and pulls new patches before launching streaming sessions.
-
----
-
-## Direct Game Launching
-
-```bash
-# Launch Devil May Cry 5
-gameghost dmc5
-
-# Launch Sekiro: Shadows Die Twice
-gameghost play sekiro
-
-# Launch Tekken 8
-gameghost play tekken8
-
-# List all detected games
-gameghost list
-```
-
 ---
 
 ## CLI Command Reference
@@ -168,16 +167,20 @@ gameghost list
 | Command | Arguments | Purpose |
 | :--- | :--- | :--- |
 | `gg` | None | Interactive mobile touch menu (for phone typing) |
-| `gameghost client` / `gg client` | `[host_ip]`, `--fullscreen` | Launch native SDL2 handheld client on phone |
-| `gameghost scan` / `gg scan` | None | Scan Wi-Fi / hotspot subnet for PC gaming host |
-| `gameghost host` / `gg host` | `--fps <int>`, `--quality <int>`, `--scale <float>` | Start streaming host and virtual controller |
-| `gameghost stop` / `gg stop` | None | Stop background GameGhost host process |
-| `gameghost status` / `gg status`| None | Display active IP, host status, and ports |
-| `gameghost dmc5` / `gg dmc5` | None | Launch Devil May Cry 5 + stream to phone |
-| `gameghost play <id>` | `<game_id>` | Launch selected game + stream |
-| `gameghost update` / `gg update`| `--force`, `--check` | Check GitHub and apply latest updates |
-| `gameghost list` / `gg list` | None | List detected PC games and installation paths |
-| `gameghost gamepad` / `gg gamepad` | None | Verify `/dev/uinput` hardware virtual gamepad |
+| `gg dmc5` / `gameghost dmc5` | None | Launch Devil May Cry 5 on PC & cast to phone |
+| `gg sekiro` / `gameghost sekiro`| None | Launch Sekiro on PC & cast to phone |
+| `gg tekken8` / `gameghost tekken8`| None | Launch Tekken 8 on PC & cast to phone |
+| `gg mk11` / `gameghost mk11` | None | Launch Mortal Kombat 11 on PC & cast to phone |
+| `gg mgr` / `gameghost mgr` | None | Launch Metal Gear Rising on PC & cast to phone |
+| `gg rottr` / `gameghost rottr` | None | Launch Rise of the Tomb Raider on PC & cast to phone |
+| `gg client` / `gameghost client`| `[host_ip]` | Launch native handheld client in Landscape mode |
+| `gg scan` / `gameghost scan` | None | Scan Wi-Fi / hotspot subnet for PC gaming host |
+| `gg start` / `gameghost start` | None | Start streaming host daemon in background |
+| `gg stop` / `gameghost stop` | None | Stop background GameGhost host process |
+| `gg status` / `gameghost status`| None | Display active IP, host status, and ports |
+| `gg list` / `gameghost list` | None | List available PC games ready to cast |
+| `gg update` / `gameghost update`| `--force`, `--check` | Check GitHub and apply latest updates |
+| `gg gamepad` / `gameghost gamepad`| None | Verify `/dev/uinput` hardware virtual gamepad |
 
 ---
 
@@ -205,8 +208,9 @@ gameghost list
 
 ```mermaid
 flowchart LR
-    subgraph Host["Gaming PC (Host)"]
-        GAME["PC Game: DMC 5"] --> CAP["Screen Capture: mss"]
+    subgraph Host["Gaming PC (24/7 Background Host)"]
+        SVC["gameghost.service (systemd)"]
+        GAME["PC Game (DMC 5 / Wine / DX12)"] --> CAP["Screen Capture: mss"]
         GAME --> AUD["Audio Capture: PulseAudio"]
         CAP --> S_WS["WebSocket Video Streamer :8900"]
         AUD --> A_WS["WebSocket Audio Streamer :8901"]
@@ -215,16 +219,17 @@ flowchart LR
     end
 
     subgraph Client["Handheld Client (Android Phone / Termux)"]
-        CLNT["gameghost client"]
-        SDL["Native SDL2 Surface / Termux-X11"]
-        TOUCH["Native Multi-Touch Engine"]
+        CMD["gg dmc5 / gg client"]
+        VIEWER["Native SDL2 Landscape Viewer"]
+        TOUCH["Multi-Touch Overlay (Sticks + Buttons)"]
     end
 
-    S_WS -->|Binary JPEG Stream| CLNT
-    TOUCH -->|Direct Input Packets| S_WS
-    S_WS -->|Kernel Events| UINP
-    CLNT --> SDL
-    DISC -.->|Auto-Discovery| CLNT
+    DISC -.->|Hotspot Discovery| CMD
+    CMD -->|Remote Launch: dmc5| S_WS
+    S_WS -->|Game Start| GAME
+    S_WS -->|Binary JPEG 60FPS| VIEWER
+    TOUCH -->|Real-Time Touch Events| S_WS
+    S_WS -->|Hardware Input Events| UINP
 ```
 
 ---
@@ -235,7 +240,7 @@ GameGhost is built and maintained by:
 
 * **rayzien** ([@rayzien](https://github.com/rayzien))
   * Creator and lead maintainer of GameGhost.
-  * Architect of the mobile handheld portal concept, native SDL2 multi-touch controller interface, auto-update workflow, and the Linux kernel `/dev/uinput` virtual Xbox 360 controller subsystem.
+  * Architect of the PC-to-phone casting system, native SDL2 landscape touch interface, background daemon service, and the Linux kernel `/dev/uinput` virtual Xbox 360 controller subsystem.
 
 * **pheonix14** ([@pheonix14](https://github.com/pheonix14))
   * Creator of the **CPUGhost** project.

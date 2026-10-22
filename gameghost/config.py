@@ -115,7 +115,10 @@ def clear_host_pid():
 
 
 def is_host_running() -> bool:
-    return get_host_pid() is not None
+    pid = get_host_pid()
+    if pid is not None and pid != os.getpid():
+        return True
+    return False
 
 
 def get_local_ip() -> str:
