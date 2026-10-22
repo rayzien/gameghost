@@ -38,7 +38,7 @@ def cmd_host(args):
 def cmd_dmc5(args):
     """Launch Devil May Cry 5 and immediately start the GameGhost portal."""
     console.print(f"[bold cyan]{BANNER}[/bold cyan]")
-    console.print("[bold red]⚡ LAUNCHING DEVIL MAY CRY 5 ⚡[/bold red]")
+    console.print("[bold red][LAUNCH] Starting Devil May Cry 5...[/bold red]")
     launch_game("dmc5")
     time.sleep(1.5)
 
@@ -53,7 +53,7 @@ def cmd_play(args):
     """Launch a specific game from the catalog and start GameGhost."""
     console.print(f"[bold cyan]{BANNER}[/bold cyan]")
     game_id = args.game
-    console.print(f"[bold green]⚡ Launching {game_id} ⚡[/bold green]")
+    console.print(f"[bold green][LAUNCH] Starting {game_id}...[/bold green]")
     launch_game(game_id)
     time.sleep(1.5)
 
@@ -86,16 +86,16 @@ def cmd_gamepad(args):
     console.print("[bold yellow]Testing Virtual Gamepad Initialization...[/bold yellow]")
     gp = VirtualGamepad()
     if gp.active and gp.uinput:
-        console.print(f"[bold green]✔ Successfully created hardware virtual device: {gp.uinput.name}[/bold green]")
+        console.print(f"[bold green][OK] Successfully created hardware virtual device: {gp.uinput.name}[/bold green]")
         console.print("[INFO] Testing button pulses (A, B, X, Y)...")
         for btn in ["A", "B", "X", "Y"]:
             gp.handle_packet({"type": "btn", "name": btn, "val": 1})
             time.sleep(0.05)
             gp.handle_packet({"type": "btn", "name": btn, "val": 0})
-        console.print("[bold green]✔ Hardware test complete! All games will recognize this device.[/bold green]")
+        console.print("[bold green][OK] Hardware test complete. All games will recognize this device.[/bold green]")
         gp.close()
     else:
-        console.print("[bold red]✘ Could not create uinput device directly. Ensure /dev/uinput has rw permissions.[/bold red]")
+        console.print("[bold red][ERR] Could not create uinput device directly. Ensure /dev/uinput has rw permissions.[/bold red]")
 
 
 def main():

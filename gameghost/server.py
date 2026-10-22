@@ -89,7 +89,7 @@ class GameGhostHost:
 
         console.print("")
         console.print("[bold cyan]==================================================================[/bold cyan]")
-        console.print("[bold green]       🎮 GAMEGHOST HANDHELD STREAMING HOST ONLINE 🎮[/bold green]")
+        console.print("[bold green]       [GAMEGHOST HANDHELD STREAMING HOST ONLINE][/bold green]")
         console.print("[bold cyan]==================================================================[/bold cyan]")
         console.print(f" [HOST IP]              : [bold white]{self.local_ip}[/bold white]")
         console.print(f" [PHONE PORTAL URL]     : [bold yellow]{portal_url}[/bold yellow]")
@@ -97,7 +97,7 @@ class GameGhostHost:
         console.print(f" [AUDIO WEBSOCKET]      : ws://{self.local_ip}:{self.audio_port}")
         console.print(f" [VIRTUAL CONTROLLER]   : [bold green]Active (Hardware Xbox 360 Pad via uinput)[/bold green]")
         console.print("[bold cyan]==================================================================[/bold cyan]")
-        console.print(f"\n[bold green]👉 Open this on your Phone's browser (or Termux):[/bold green]")
+        console.print(f"\n[bold green][CONNECT] Open this on your Phone's browser (or Termux):[/bold green]")
         console.print(f"   [bold yellow]{portal_url}[/bold yellow]\n")
 
         # 1. Start stream server thread
