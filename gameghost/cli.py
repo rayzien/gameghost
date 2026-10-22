@@ -9,6 +9,7 @@ from .config import load_config, get_local_ip
 from .server import GameGhostHost
 from .launcher import launch_game, list_games
 from .gamepad import VirtualGamepad
+from .client import run_client
 
 console = Console()
 
@@ -80,6 +81,13 @@ def cmd_list(args):
     console.print(table)
 
 
+def cmd_client(args):
+    """Launch the native GameGhost handheld client with on-screen touch overlay."""
+    console.print(f"[bold cyan]{BANNER}[/bold cyan]")
+    console.print("[bold green][CLIENT] Starting GameGhost Native Handheld Client...[/bold green]")
+    run_client(host_ip=args.ip, fullscreen=args.fullscreen)
+
+
 def cmd_gamepad(args):
     """Test and verify the hardware virtual gamepad (/dev/uinput)."""
     console.print(f"[bold cyan]{BANNER}[/bold cyan]")
@@ -123,6 +131,11 @@ def main():
     # list command
     subparsers.add_parser("list", help="List detected games on the system")
 
+    # client command
+    p_client = subparsers.add_parser("client", help="Launch native handheld client with touch controls")
+    p_client.add_argument("ip", type=str, nargs="?", default=None, help="Host PC IP address (auto-discovered if omitted)")
+    p_client.add_argument("--fullscreen", "-f", action="store_true", help="Launch in fullscreen mode")
+
     # gamepad command
     subparsers.add_parser("gamepad", help="Test the virtual gamepad device")
 
@@ -134,6 +147,8 @@ def main():
         cmd_dmc5(args)
     elif args.command == "play":
         cmd_play(args)
+    elif args.command == "client":
+        cmd_client(args)
     elif args.command == "list":
         cmd_list(args)
     elif args.command == "gamepad":

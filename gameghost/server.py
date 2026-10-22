@@ -12,6 +12,7 @@ from rich.console import Console
 from .config import load_config, get_local_ip
 from .stream_server import GameStreamServer
 from .audio_server import GameAudioServer
+from .discovery import GameDiscovery
 from .launcher import list_games, launch_game
 
 console = Console()
@@ -79,6 +80,7 @@ class GameGhostHost:
             port=self.audio_port
         )
 
+        self.discovery = GameDiscovery()
         self.app = create_app(self.cfg, self)
         self.running = False
 
@@ -100,7 +102,10 @@ class GameGhostHost:
         console.print(f"\n[bold green][CONNECT] Open this on your Phone's browser (or Termux):[/bold green]")
         console.print(f"   [bold yellow]{portal_url}[/bold yellow]\n")
 
-        # 1. Start stream server thread
+        # 1. Start discovery beacon
+        self.discovery.start_broadcaster()
+
+        # 2. Start stream server thread
         def _run_stream():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
@@ -133,6 +138,7 @@ class GameGhostHost:
 
     def stop(self):
         self.running = False
+        self.discovery.stop()
         self.stream_server.stop()
         self.audio_server.stop()
         console.print("[HOST] GameGhost Host stopped.")

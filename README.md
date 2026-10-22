@@ -15,116 +15,121 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-brightgreen.svg)](https://www.python.org/)
 [![Platform: Linux](https://img.shields.io/badge/Platform-Linux-orange.svg)](https://kernel.org)
-[![Client: Android / Termux / Web](https://img.shields.io/badge/Client-Android%20%7C%20Termux%20%7C%20Browser-purple.svg)](https://termux.dev)
+[![Client: Termux / Native SDL2](https://img.shields.io/badge/Client-Termux%20%7C%20Native%20SDL2-purple.svg)](https://termux.dev)
 [![Virtual Gamepad: uinput Xbox 360](https://img.shields.io/badge/Gamepad-uinput%20Xbox%20360-success.svg)](https://www.kernel.org/doc/html/latest/input/uinput.html)
 
 ---
 
 ## Overview
 
-**GameGhost** is an open-source, ultra-low latency PC game casting and mobile handheld controller system. It turns any Android smartphone, tablet, or browser client into a dedicated handheld console (similar to the PlayStation Portal or Steam Deck) to stream and control PC games over local Wi-Fi or mobile hotspot.
+**GameGhost** is an open-source, ultra-low latency PC game casting and mobile handheld controller system. It turns any Android smartphone running Termux into a dedicated handheld console (similar to the PlayStation Portal or Steam Deck) to stream and control PC games over local Wi-Fi or mobile hotspot.
 
-Running on the host PC (Linux), GameGhost captures active games (including Wine/Proton titles like **Devil May Cry 5**, **Sekiro**, **Tekken 8**) and streams hardware-accelerated video and audio directly to your mobile browser or Termux session. It exposes a native Linux kernel virtual Xbox 360 controller via `/dev/uinput`, translating phone touch gestures into hardware gamepad inputs.
+**No HTML. No Web Browsers. No scrcpy.**
+
+Built on the high-efficiency architecture of **CPUGhost**, GameGhost operates as a pure native client-server system:
+* **Host (Gaming PC)**: Captures game video at native refresh rates, streams over optimized binary WebSockets, and maps incoming packets directly into a hardware-level virtual Xbox 360 gamepad via Linux `/dev/uinput`.
+* **Client (Phone / Termux)**: A native SDL2/Pygame-CE handheld viewer with direct framebuffer rendering and a custom multi-touch on-screen controller overlay.
 
 ---
 
 ## Search & Discovery Keywords (SEO)
 
-`pc-game-streaming` `handheld-console` `playstation-portal-alternative` `steam-deck-alternative` `android-game-streaming` `termux-gaming` `uinput-virtual-controller` `evdev-gamepad` `devil-may-cry-5-remote-play` `linux-remote-play` `touch-screen-gamepad` `low-latency-streamer` `local-hotspot-gaming`
+`pc-game-streaming` `handheld-console` `playstation-portal-alternative` `steam-deck-alternative` `android-game-streaming` `termux-gaming` `termux-x11` `uinput-virtual-controller` `evdev-gamepad` `devil-may-cry-5-remote-play` `linux-remote-play` `touch-screen-gamepad` `low-latency-streamer` `local-hotspot-gaming` `native-sdl2-client`
 
 ---
 
-## Key Features
+## Key Highlights
 
-1. **Native Hardware Virtual Controller (Xbox 360 via uinput)**
-   * Uses Linux `/dev/uinput` through `evdev` to create an authentic virtual Microsoft Xbox 360 gamepad.
-   * Recognized automatically by games running under Steam, Proton, Wine, or native Linux without requiring external controller emulators.
-   * Provides true 16-bit analog stick resolution (-32768 to 32767) and 8-bit analog trigger axes (0 to 255).
+1. **Native Client Engine (No Web Browser Overhead)**
+   * Built on SDL2 / Pygame-CE running directly in Termux (via Termux-X11) or native Linux.
+   * Direct hardware-accelerated surface rendering with zero DOM, zero browser address bars, and zero gesture interference.
 
-2. **PlayStation Portal-Style Touch Interface**
-   * **Dual Analog Thumbsticks**: Left Stick (LS) for character movement, Right Stick (RS) for camera control.
+2. **Native Multi-Touch On-Screen Gamepad**
+   * Uses low-level SDL2 multi-touch events (`pygame.FINGERDOWN`, `pygame.FINGERMOTION`, `pygame.FINGERUP`).
+   * **Dual Virtual Analog Thumbsticks**: Left Stick (LS - Movement) and Right Stick (RS - Camera).
    * **Action Cluster**: Y (Triangle), X (Square), B (Circle), A (Cross).
-   * **Directional Pad (D-Pad)**: Up, Down, Left, Right for instant weapon or style switching.
+   * **Directional Pad (D-Pad)**: Up, Down, Left, Right for instant style switching in Devil May Cry 5.
    * **Shoulders & Triggers**: L1 (LB), R1 (RB), L2 (LT analog trigger), R2 (RT analog trigger).
-   * **System Controls**: Select / Share, Start / Options, Home / Guide.
+   * **System Buttons**: Select / Share, Start / Options, Home / Guide.
 
-3. **Multi-Touch Engine**
-   * Independent pointer tracking prevents input cancellation.
-   * Run with the left thumbstick while holding lock-on (R1) and executing attack combinations simultaneously.
+3. **Hardware Virtual Xbox 360 Gamepad (Linux uinput)**
+   * Emulates a native Microsoft Xbox 360 controller directly in the Linux kernel via `/dev/uinput`.
+   * Recognized automatically by Steam, Proton, Wine, and native Linux games.
 
-4. **Haptic Vibration Feedback**
-   * Employs the HTML5 Vibration API (`navigator.vibrate`) to deliver tactile feedback upon button strikes.
-
-5. **Display WakeLock & Immersive Fullscreen**
-   * Utilizes the Screen WakeLock API to keep the mobile display awake indefinitely during gameplay.
-   * One-tap fullscreen prompt locks browser orientation into landscape.
-
-6. **Zero APK Installation Required**
-   * Fully compatible with standard mobile browsers (Chrome, Brave, Firefox) and Android Termux via `termux-open-url`.
+4. **Zero-Configuration Hotspot Auto-Discovery**
+   * Employs UDP discovery beacons and concurrent subnet scanning.
+   * Just run `gameghost client` on your phone; it automatically locates your PC host on the mobile hotspot in under two seconds.
 
 ---
 
 ## Quick Start
 
-### 1. Host Installation
-Clone the repository and run the setup script:
-```bash
-git clone https://github.com/rayzien/gameghost.git
-cd gameghost
-./setup.sh
-```
-
-### 2. Start the GameGhost Host
-Launch the streaming server and virtual gamepad host:
+### 1. On Your Gaming PC (Host)
+Launch the GameGhost host:
 ```bash
 gameghost host
 ```
 
-Terminal output will display your local network access link:
+Or launch Devil May Cry 5 directly with streaming enabled:
+```bash
+gameghost dmc5
+```
+
+Terminal output:
 ```text
 ==================================================================
        [GAMEGHOST HANDHELD STREAMING HOST ONLINE]
 ==================================================================
  [HOST IP]              : 10.176.124.73
- [PHONE PORTAL URL]     : http://10.176.124.73:8899
  [STREAM WEBSOCKET]     : ws://10.176.124.73:8900
  [AUDIO WEBSOCKET]      : ws://10.176.124.73:8901
  [VIRTUAL CONTROLLER]   : Active (Hardware Xbox 360 Pad via uinput)
 ==================================================================
-
-[CONNECT] Open this on your Phone's browser (or Termux):
-   http://10.176.124.73:8899
 ```
 
-### 3. Connect from Mobile Phone or Termux
-Ensure your smartphone is on the same local Wi-Fi or mobile hotspot as your PC:
-* **Browser**: Navigate to `http://<YOUR_PC_IP>:8899`
-* **Termux**:
-  ```bash
-  termux-open-url http://<YOUR_PC_IP>:8899
-  ```
-* Tap **"TAP TO ENTER FULLSCREEN"** to engage fullscreen landscape controls.
+---
+
+### 2. On Your Android Phone (Termux Native Client)
+
+#### A. Install Prerequisites in Termux
+Open Termux on your phone and run:
+```bash
+pkg update
+pkg install -y python git x11-repo
+pkg install -y termux-x11-nightly python-pygame
+pip install websockets rich
+```
+
+#### B. Clone & Launch GameGhost Client
+```bash
+git clone https://github.com/rayzien/gameghost.git
+cd gameghost
+
+# Auto-discovers PC host over hotspot Wi-Fi:
+./bin/gameghost client
+
+# Or connect to specific host IP:
+./bin/gameghost client 10.176.124.73
+```
+
+Open the **Termux-X11** app on your phone. You will see the game stream full-screen with the on-screen touch controller overlay active.
 
 ---
 
 ## Direct Game Launching
 
-### Launch Devil May Cry 5
-Launch Devil May Cry 5 and initiate the GameGhost streaming server in a single command:
 ```bash
+# Launch Devil May Cry 5
 gameghost dmc5
-```
 
-### Launch from Catalog
-```bash
-# View detected games
-gameghost list
-
-# Launch Sekiro
+# Launch Sekiro: Shadows Die Twice
 gameghost play sekiro
 
 # Launch Tekken 8
 gameghost play tekken8
+
+# List all detected games
+gameghost list
 ```
 
 ---
@@ -133,9 +138,10 @@ gameghost play tekken8
 
 | Command | Arguments | Purpose |
 | :--- | :--- | :--- |
-| `gameghost host` | `--fps <int>`, `--quality <int>`, `--scale <float>` | Start streaming server and virtual controller |
+| `gameghost host` | `--fps <int>`, `--quality <int>`, `--scale <float>` | Start streaming host and virtual controller |
 | `gameghost dmc5` | `--fps <int>`, `--quality <int>` | Launch Devil May Cry 5 + stream to phone |
 | `gameghost play <id>` | `<game_id>` | Launch selected game + stream to phone |
+| `gameghost client` | `[host_ip]`, `--fullscreen` | Launch native SDL2 handheld client on phone |
 | `gameghost list` | None | List detected PC games and installation paths |
 | `gameghost gamepad` | None | Verify `/dev/uinput` hardware virtual gamepad |
 
@@ -143,7 +149,7 @@ gameghost play tekken8
 
 ## Input Mapping (Xbox 360 & Devil May Cry 5)
 
-| Touch Control | Linux uinput Code | Devil May Cry 5 In-Game Function |
+| Touch Control | Linux uinput Code | Devil May Cry 5 Action |
 | :--- | :--- | :--- |
 | **Left Stick** | `ABS_X` / `ABS_Y` | Player Movement (Walk / Sprint) |
 | **Right Stick** | `ABS_RX` / `ABS_RY` | Camera Orientation / Target Orbit |
@@ -165,27 +171,26 @@ gameghost play tekken8
 
 ```mermaid
 flowchart LR
-    subgraph Host["Host PC (Linux)"]
+    subgraph Host["Gaming PC (Host)"]
         GAME[PC Game: DMC 5] --> CAP[Screen Capture: mss]
         GAME --> AUD[Audio Capture: PulseAudio]
         CAP --> S_WS[WebSocket Video Streamer :8900]
         AUD --> A_WS[WebSocket Audio Streamer :8901]
-        WEB[FastAPI Web Server :8899]
+        DISC[Discovery Beacon :8990]
         UINP[Virtual Gamepad: /dev/uinput] --> GAME
     end
 
-    subgraph Client["Handheld Client (Android Phone / Termux)"]
-        BRW[Mobile Browser]
-        SCR[HTML5 Canvas Viewport]
-        CTR[Multi-Touch Controller Overlay]
-        SPK[WebAudio Engine]
+    subgraph Client["Phone / Termux (Native Client)"]
+        CLNT[gameghost client]
+        SDL[Native SDL2 Surface / Termux-X11]
+        TOUCH[Native Multi-Touch Engine]
     end
 
-    S_WS -->|Low Latency Frames| SCR
-    A_WS -->|Raw PCM Audio| SPK
-    CTR -->|Touch Input Packets| S_WS
+    S_WS -->|Binary JPEG Stream| CLNT
+    TOUCH -->|Direct Input Packets| S_WS
     S_WS -->|Kernel Events| UINP
-    WEB -->|App Shell Delivery| BRW
+    CLNT --> SDL
+    DISC -.->|Auto-Discovery| CLNT
 ```
 
 ---
@@ -196,7 +201,7 @@ GameGhost is built and maintained by:
 
 * **rayzien** ([@rayzien](https://github.com/rayzien))
   * Creator and lead maintainer of GameGhost.
-  * Architect of the mobile handheld portal concept, multi-touch controller interface, and the Linux kernel `/dev/uinput` virtual Xbox 360 controller subsystem.
+  * Architect of the mobile handheld portal concept, native SDL2 multi-touch controller interface, and the Linux kernel `/dev/uinput` virtual Xbox 360 controller subsystem.
 
 * **pheonix14** ([@pheonix14](https://github.com/pheonix14))
   * Creator of the **CPUGhost** project.
