@@ -13,6 +13,7 @@
 ```
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Version: 1.1.0](https://img.shields.io/badge/Version-1.1.0-brightgreen.svg)](https://github.com/rayzien/gameghost/releases)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-brightgreen.svg)](https://www.python.org/)
 [![Platform: Linux](https://img.shields.io/badge/Platform-Linux-orange.svg)](https://kernel.org)
 [![Client: Termux / Native SDL2](https://img.shields.io/badge/Client-Termux%20%7C%20Native%20SDL2-purple.svg)](https://termux.dev)
@@ -24,17 +25,18 @@
 
 **GameGhost** is an open-source, ultra-low latency PC game casting and mobile handheld controller system. It turns any Android smartphone running Termux into a dedicated handheld console (similar to the PlayStation Portal or Steam Deck) to stream and control PC games over local Wi-Fi or mobile hotspot.
 
-**No HTML. No Web Browsers. No scrcpy.**
+**Zero HTML. Zero Web Browsers. Zero scrcpy.**
 
 Built on the high-efficiency architecture of **CPUGhost**, GameGhost operates as a pure native client-server system:
 * **Host (Gaming PC)**: Captures game video at native refresh rates, streams over optimized binary WebSockets, and maps incoming packets directly into a hardware-level virtual Xbox 360 gamepad via Linux `/dev/uinput`.
-* **Client (Phone / Termux)**: A native SDL2/Pygame-CE handheld viewer with direct framebuffer rendering and a custom multi-touch on-screen controller overlay.
+* **Client (Phone / Termux)**: A native SDL2/Pygame-CE handheld viewer with direct framebuffer rendering, auto-discovery over hotspot Wi-Fi, and a custom multi-touch on-screen controller overlay.
+* **Auto-Update System**: Automatically syncs the latest releases and fixes from GitHub on both Host and Client without manual intervention.
 
 ---
 
 ## Search & Discovery Keywords (SEO)
 
-`pc-game-streaming` `handheld-console` `playstation-portal-alternative` `steam-deck-alternative` `android-game-streaming` `termux-gaming` `termux-x11` `uinput-virtual-controller` `evdev-gamepad` `devil-may-cry-5-remote-play` `linux-remote-play` `touch-screen-gamepad` `low-latency-streamer` `local-hotspot-gaming` `native-sdl2-client`
+`pc-game-streaming` `handheld-console` `playstation-portal-alternative` `steam-deck-alternative` `android-game-streaming` `termux-gaming` `termux-x11` `uinput-virtual-controller` `evdev-gamepad` `devil-may-cry-5-remote-play` `linux-remote-play` `touch-screen-gamepad` `low-latency-streamer` `local-hotspot-gaming` `native-sdl2-client` `auto-update-client`
 
 ---
 
@@ -56,7 +58,12 @@ Built on the high-efficiency architecture of **CPUGhost**, GameGhost operates as
    * Emulates a native Microsoft Xbox 360 controller directly in the Linux kernel via `/dev/uinput`.
    * Recognized automatically by Steam, Proton, Wine, and native Linux games.
 
-4. **Zero-Configuration Hotspot Auto-Discovery**
+4. **Integrated Auto-Update Engine**
+   * Derived from the CPUGhost auto-update architecture.
+   * Every launch of `gameghost host` or `gameghost client` silently queries GitHub for the latest release commits and applies updates automatically.
+   * Can also be run explicitly via `gameghost update`.
+
+5. **Zero-Configuration Hotspot Auto-Discovery**
    * Employs UDP discovery beacons and concurrent subnet scanning.
    * Just run `gameghost client` on your phone; it automatically locates your PC host on the mobile hotspot in under two seconds.
 
@@ -84,6 +91,7 @@ Terminal output:
  [STREAM WEBSOCKET]     : ws://10.176.124.73:8900
  [AUDIO WEBSOCKET]      : ws://10.176.124.73:8901
  [VIRTUAL CONTROLLER]   : Active (Hardware Xbox 360 Pad via uinput)
+ [HOTSPOT BEACON]       : UDP Broadcast Active
 ==================================================================
 ```
 
@@ -116,6 +124,17 @@ Open the **Termux-X11** app on your phone. You will see the game stream full-scr
 
 ---
 
+## Auto-Update System
+
+To check for updates manually on either the PC host or the phone client:
+```bash
+gameghost update
+```
+
+The system automatically checks GitHub (`origin/main`) and pulls new patches before launching streaming sessions.
+
+---
+
 ## Direct Game Launching
 
 ```bash
@@ -142,6 +161,7 @@ gameghost list
 | `gameghost dmc5` | `--fps <int>`, `--quality <int>` | Launch Devil May Cry 5 + stream to phone |
 | `gameghost play <id>` | `<game_id>` | Launch selected game + stream to phone |
 | `gameghost client` | `[host_ip]`, `--fullscreen` | Launch native SDL2 handheld client on phone |
+| `gameghost update` | None | Check GitHub and apply latest updates |
 | `gameghost list` | None | List detected PC games and installation paths |
 | `gameghost gamepad` | None | Verify `/dev/uinput` hardware virtual gamepad |
 
@@ -180,7 +200,7 @@ flowchart LR
         UINP[Virtual Gamepad: /dev/uinput] --> GAME
     end
 
-    subgraph Client["Phone / Termux (Native Client)"]
+    subgraph Client["Handheld Client (Android Phone / Termux)"]
         CLNT[gameghost client]
         SDL[Native SDL2 Surface / Termux-X11]
         TOUCH[Native Multi-Touch Engine]
@@ -201,11 +221,11 @@ GameGhost is built and maintained by:
 
 * **rayzien** ([@rayzien](https://github.com/rayzien))
   * Creator and lead maintainer of GameGhost.
-  * Architect of the mobile handheld portal concept, native SDL2 multi-touch controller interface, and the Linux kernel `/dev/uinput` virtual Xbox 360 controller subsystem.
+  * Architect of the mobile handheld portal concept, native SDL2 multi-touch controller interface, auto-update workflow, and the Linux kernel `/dev/uinput` virtual Xbox 360 controller subsystem.
 
 * **pheonix14** ([@pheonix14](https://github.com/pheonix14))
   * Creator of the **CPUGhost** project.
-  * Architectural foundation for headless desktop screen capture, low-latency WebSocket frame distribution, and local network hotspot discovery.
+  * Architectural foundation for headless desktop screen capture, low-latency WebSocket frame distribution, local network hotspot discovery, and update verification patterns.
 
 ---
 

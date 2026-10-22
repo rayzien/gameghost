@@ -1,7 +1,9 @@
 import sys
 import os
 import time
+import subprocess
 import argparse
+from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 
@@ -26,8 +28,72 @@ BANNER = r"""
 """
 
 
+def check_and_apply_auto_update(silent: bool = True):
+    """
+    Check GitHub (rayzien/gameghost) for updates and apply them automatically.
+    Derived from CPUGhost auto-update architecture.
+    """
+    project_dir = Path(__file__).resolve().parent.parent
+    git_dir = project_dir / ".git"
+    if not git_dir.exists():
+        if not silent:
+            console.print("[INFO] Not a git repository. Skipping update check.")
+        return False
+
+    try:
+        if not silent:
+            console.print("[UPDATE] Checking GitHub (rayzien/gameghost) for updates...")
+
+        res_head = subprocess.run(
+            ["git", "ls-remote", "--heads", "origin", "main"],
+            cwd=str(project_dir),
+            capture_output=True,
+            text=True,
+            timeout=8.0
+        )
+
+        if res_head.returncode == 0 and res_head.stdout:
+            remote_hash = res_head.stdout.strip().split()[0]
+            local_res = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=str(project_dir),
+                capture_output=True,
+                text=True
+            )
+            local_hash = local_res.stdout.strip() if local_res.returncode == 0 else ""
+
+            if remote_hash and local_hash and remote_hash != local_hash:
+                console.print("[bold yellow][UPDATE] New version detected on GitHub. Applying update...[/bold yellow]")
+                pull_res = subprocess.run(
+                    ["git", "pull", "--quiet", "origin", "main"],
+                    cwd=str(project_dir),
+                    capture_output=True,
+                    text=True
+                )
+                if pull_res.returncode == 0:
+                    console.print("[bold green][OK] GameGhost successfully updated to latest version.[/bold green]")
+                    return True
+                else:
+                    if not silent:
+                        console.print(f"[ERR] Update pull failed: {pull_res.stderr.strip()}")
+            else:
+                if not silent:
+                    console.print("[bold green][OK] GameGhost is already up to date.[/bold green]")
+    except Exception as ex:
+        if not silent:
+            console.print(f"[ERR] Update check error: {ex}")
+    return False
+
+
+def cmd_update(args):
+    """Check and apply latest updates from GitHub."""
+    console.print(f"[bold cyan]{BANNER}[/bold cyan]")
+    check_and_apply_auto_update(silent=False)
+
+
 def cmd_host(args):
     """Start the GameGhost game streaming and virtual controller host."""
+    check_and_apply_auto_update(silent=True)
     console.print(f"[bold cyan]{BANNER}[/bold cyan]")
     host = GameGhostHost(fps=args.fps, quality=args.quality, scale=args.scale)
     try:
@@ -38,6 +104,7 @@ def cmd_host(args):
 
 def cmd_dmc5(args):
     """Launch Devil May Cry 5 and immediately start the GameGhost portal."""
+    check_and_apply_auto_update(silent=True)
     console.print(f"[bold cyan]{BANNER}[/bold cyan]")
     console.print("[bold red][LAUNCH] Starting Devil May Cry 5...[/bold red]")
     launch_game("dmc5")
@@ -52,6 +119,7 @@ def cmd_dmc5(args):
 
 def cmd_play(args):
     """Launch a specific game from the catalog and start GameGhost."""
+    check_and_apply_auto_update(silent=True)
     console.print(f"[bold cyan]{BANNER}[/bold cyan]")
     game_id = args.game
     console.print(f"[bold green][LAUNCH] Starting {game_id}...[/bold green]")
@@ -83,6 +151,7 @@ def cmd_list(args):
 
 def cmd_client(args):
     """Launch the native GameGhost handheld client with on-screen touch overlay."""
+    check_and_apply_auto_update(silent=True)
     console.print(f"[bold cyan]{BANNER}[/bold cyan]")
     console.print("[bold green][CLIENT] Starting GameGhost Native Handheld Client...[/bold green]")
     run_client(host_ip=args.ip, fullscreen=args.fullscreen)
@@ -136,6 +205,9 @@ def main():
     p_client.add_argument("ip", type=str, nargs="?", default=None, help="Host PC IP address (auto-discovered if omitted)")
     p_client.add_argument("--fullscreen", "-f", action="store_true", help="Launch in fullscreen mode")
 
+    # update command
+    subparsers.add_parser("update", help="Check and apply latest updates from GitHub")
+
     # gamepad command
     subparsers.add_parser("gamepad", help="Test the virtual gamepad device")
 
@@ -149,6 +221,8 @@ def main():
         cmd_play(args)
     elif args.command == "client":
         cmd_client(args)
+    elif args.command == "update":
+        cmd_update(args)
     elif args.command == "list":
         cmd_list(args)
     elif args.command == "gamepad":

@@ -19,7 +19,6 @@ class GameGhostHost:
         self.cfg = load_config()
         self.stream_port = self.cfg.get("stream_port", 8900)
         self.audio_port = self.cfg.get("audio_port", 8901)
-        self.http_port = self.cfg.get("http_port", 8899)
         self.local_ip = get_local_ip()
 
         self.stream_server = GameStreamServer(
