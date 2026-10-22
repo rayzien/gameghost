@@ -1,15 +1,16 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # ==============================================================================
-# GameGhost One-Line Installer & Setup
+# GameGhost One-Line Installer & Setup (Linux & Android Termux)
 # ==============================================================================
 set -e
 
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+SCRIPT_DIR="$( cd "$( dirname "$0" )" && pwd )"
 BIN_DIR="${HOME}/.local/bin"
+TERMUX_BIN="${HOME}/bin"
 
 echo "==> Setting up GameGhost..."
 
-# 1. Ensure uinput permissions
+# 1. Ensure uinput permissions on Linux PC host
 if [ -c /dev/uinput ]; then
     if ! [ -w /dev/uinput ]; then
         echo "[INFO] Configuring /dev/uinput permissions for virtual gamepad..."
@@ -18,12 +19,18 @@ if [ -c /dev/uinput ]; then
     fi
 fi
 
-# 2. Make launcher executable and create symlink
+# 2. Make launcher executable and install global symlinks
 chmod +x "${SCRIPT_DIR}/bin/gameghost"
+
 mkdir -p "${BIN_DIR}"
 ln -sf "${SCRIPT_DIR}/bin/gameghost" "${BIN_DIR}/gameghost"
+ln -sf "${SCRIPT_DIR}/bin/gameghost" "${BIN_DIR}/gg"
 
-# 3. Create Desktop Launcher
+mkdir -p "${TERMUX_BIN}"
+ln -sf "${SCRIPT_DIR}/bin/gameghost" "${TERMUX_BIN}/gameghost"
+ln -sf "${SCRIPT_DIR}/bin/gameghost" "${TERMUX_BIN}/gg"
+
+# 3. Create Desktop Launcher if Desktop directory exists
 DESKTOP_DIR="${HOME}/Desktop"
 if [ -d "${DESKTOP_DIR}" ]; then
     cat << EOF > "${DESKTOP_DIR}/GameGhost.desktop"
@@ -40,4 +47,11 @@ EOF
 fi
 
 echo "==> GameGhost installation complete!"
-echo "Run 'gameghost host' or 'gameghost dmc5' to start playing."
+echo "You can now run 'gameghost' or quick alias 'gg' from anywhere:"
+echo "  gg             - Interactive Touch Menu on your phone"
+echo "  gg open        - Launch portal in phone browser"
+echo "  gg client      - Launch native SDL2 touch client"
+echo "  gg scan        - Scan network for PC host"
+echo "  gg dmc5        - Launch Devil May Cry 5 & stream"
+echo "  gg host        - Start PC streaming host"
+echo "  gg status      - Show connection status"

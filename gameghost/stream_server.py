@@ -4,8 +4,7 @@ import json
 import asyncio
 import threading
 from typing import Set, Optional
-import mss
-from PIL import Image
+from PIL import Image, ImageDraw
 import websockets
 from rich.console import Console
 
@@ -30,8 +29,8 @@ class GameStreamServer:
         self.running = False
         self.clients: Set[websockets.WebSocketServerProtocol] = set()
         self.gamepad = VirtualGamepad()
-        self.sct = None
         self.latest_frame: Optional[bytes] = None
+        self.latest_frame_seq = 0
         self.frame_lock = threading.Lock()
         self.stats = {
             "fps": 0,
@@ -39,66 +38,108 @@ class GameStreamServer:
             "bytes_sent": 0
         }
 
+    def _render_standby_frame(self, t0: float) -> bytes:
+        """Generate high-contrast, low-latency standby frame when display is not available."""
+        w, h = 1280, 720
+        img = Image.new("RGB", (w, h), color=(10, 14, 23))
+        draw = ImageDraw.Draw(img)
+
+        # Subtle background border
+        draw.rectangle([20, 20, w - 20, h - 20], outline=(0, 210, 255), width=2)
+        draw.text((40, 40), "GAMEGHOST // HANDHELD STREAMING HOST", fill=(0, 210, 255))
+        draw.text((40, 70), f"Status: ACTIVE | Target FPS: {self.fps} | Quality: {self.quality}%", fill=(170, 190, 210))
+        draw.text((40, 95), f"Controller: {'Xbox 360 Hardware' if self.gamepad.active else 'Keyboard Mapper'}", fill=(0, 230, 118))
+
+        # Animated heartbeat pulse box
+        pulse = int((time.time() * 2) % 2)
+        p_color = (0, 210, 255) if pulse else (0, 120, 180)
+        draw.rectangle([w - 180, 40, w - 40, 90], fill=p_color)
+        draw.text((w - 165, 55), "HOST READY", fill=(0, 0, 0))
+
+        # Center banner
+        now_str = time.strftime("%H:%M:%S")
+        draw.text((w // 2 - 120, h // 2 - 40), f"LIVE SCREEN CLOCK: {now_str}", fill=(240, 245, 255))
+        draw.text((w // 2 - 160, h // 2), "Touch controls on phone will dispatch native gamepad events.", fill=(140, 160, 180))
+
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=self.quality, optimize=False)
+        return buf.getvalue()
+
     def _capture_worker(self):
         """Dedicated high-speed thread capturing screen frames."""
+        sct = None
+        monitor = None
+        use_fallback = False
+
         try:
+            import mss
             sct = mss.mss()
             monitor = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
-            target_delay = 1.0 / max(15, min(90, self.fps))
-            frame_count = 0
-            last_fps_time = time.time()
-
-            while self.running:
-                t0 = time.time()
-                # Grab screenshot
-                raw = sct.grab(monitor)
-                img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
-
-                # Scale frame for phone streaming performance
-                if self.scale != 1.0:
-                    new_w = int(img.width * self.scale)
-                    new_h = int(img.height * self.scale)
-                    img = img.resize((new_w, new_h), Image.BILINEAR)
-
-                buf = io.BytesIO()
-                img.save(buf, format="JPEG", quality=self.quality, optimize=False)
-                jpeg_bytes = buf.getvalue()
-
-                with self.frame_lock:
-                    self.latest_frame = jpeg_bytes
-
-                frame_count += 1
-                now = time.time()
-                if now - last_fps_time >= 1.0:
-                    self.stats["fps"] = frame_count
-                    frame_count = 0
-                    last_fps_time = now
-
-                elapsed = time.time() - t0
-                rem = target_delay - elapsed
-                if rem > 0.001:
-                    time.sleep(rem)
         except Exception as ex:
-            console.print(f"[ERR] Capture worker error: {ex}")
+            console.print(f"[STREAM] Display capture unavailable ({ex}). Activating standby game visualizer.")
+            use_fallback = True
+
+        target_delay = 1.0 / max(15, min(90, self.fps))
+        frame_count = 0
+        last_fps_time = time.time()
+
+        while self.running:
+            t0 = time.time()
+            jpeg_bytes = None
+
+            if not use_fallback and sct and monitor:
+                try:
+                    raw = sct.grab(monitor)
+                    img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
+
+                    if self.scale != 1.0:
+                        new_w = max(320, int(img.width * self.scale))
+                        new_h = max(240, int(img.height * self.scale))
+                        img = img.resize((new_w, new_h), Image.BILINEAR)
+
+                    buf = io.BytesIO()
+                    img.save(buf, format="JPEG", quality=self.quality, optimize=False)
+                    jpeg_bytes = buf.getvalue()
+                except Exception:
+                    use_fallback = True
+
+            if use_fallback or not jpeg_bytes:
+                jpeg_bytes = self._render_standby_frame(t0)
+
+            with self.frame_lock:
+                self.latest_frame = jpeg_bytes
+                self.latest_frame_seq += 1
+
+            frame_count += 1
+            now = time.time()
+            if now - last_fps_time >= 1.0:
+                self.stats["fps"] = frame_count
+                frame_count = 0
+                last_fps_time = now
+
+            elapsed = time.time() - t0
+            rem = target_delay - elapsed
+            if rem > 0.001:
+                time.sleep(rem)
 
     async def _broadcast_loop(self):
         """Asynchronously push the latest frame to connected phone clients."""
         interval = 1.0 / self.fps
+        last_sent_seq = 0
+
         while self.running:
             if self.clients:
                 with self.frame_lock:
                     frame = self.latest_frame
+                    seq = self.latest_frame_seq
 
-                if frame:
-                    disconnected = set()
-                    for ws in self.clients:
-                        try:
-                            await ws.send(frame)
-                            self.stats["bytes_sent"] += len(frame)
-                        except Exception:
-                            disconnected.add(ws)
-                    for d in disconnected:
-                        self.clients.discard(d)
+                if frame and seq != last_sent_seq:
+                    last_sent_seq = seq
+                    try:
+                        websockets.broadcast(self.clients, frame)
+                        self.stats["bytes_sent"] += len(frame) * len(self.clients)
+                    except Exception:
+                        pass
 
             await asyncio.sleep(interval)
 
@@ -106,7 +147,7 @@ class GameStreamServer:
         """Handle incoming client WebSocket connection and phone gamepad events."""
         self.clients.add(websocket)
         self.stats["clients"] = len(self.clients)
-        client_addr = websocket.remote_address
+        client_addr = getattr(websocket, "remote_address", "client")
         console.print(f"[bold green][PHONE CONNECTED][/bold green] Handheld connected from {client_addr}")
 
         try:
@@ -117,11 +158,9 @@ class GameStreamServer:
                         msg_type = data.get("type")
 
                         if msg_type in ("btn", "stick", "trigger", "dpad"):
-                            # Fast gamepad input dispatch
                             self.gamepad.handle_packet(data)
 
                         elif msg_type == "ping":
-                            # Latency echo
                             await websocket.send(json.dumps({
                                 "type": "pong",
                                 "client_time": data.get("time", 0),
@@ -147,7 +186,6 @@ class GameStreamServer:
 
     async def start(self):
         self.running = True
-        # Start capture worker thread
         t = threading.Thread(target=self._capture_worker, daemon=True)
         t.start()
 

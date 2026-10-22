@@ -15,6 +15,7 @@
     // Elements
     const canvas = document.getElementById("game-canvas");
     const ctx = canvas.getContext("2d", { alpha: false });
+    const touchControls = document.getElementById("touch-controls");
     const loadingOverlay = document.getElementById("loading-overlay");
     const connStatus = document.getElementById("conn-status");
     const fpsTag = document.getElementById("fps-tag");
@@ -25,15 +26,18 @@
     const btnSettings = document.getElementById("btn-settings");
     const settingsModal = document.getElementById("settings-modal");
     const btnCloseSettings = document.getElementById("btn-close-settings");
+    const settingOpacity = document.getElementById("setting-opacity");
 
-    // Performance Stats
+    // Performance & Rendering Buffer
+    let pendingFrameBlob = null;
+    let isRendering = false;
     let framesDrawn = 0;
     let lastFpsUpdate = performance.now();
     let currentFps = 0;
     let lastPingSend = 0;
 
     // -------------------------------------------------------------------------
-    // 1. Wake Lock & Fullscreen
+    // 1. Wake Lock & Fullscreen & Visibility
     // -------------------------------------------------------------------------
     async function requestWakeLock() {
         try {
@@ -45,6 +49,15 @@
             console.log("[WAKELOCK] Not supported or failed:", e);
         }
     }
+
+    document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") {
+            requestWakeLock();
+            if (!streamWs || streamWs.readyState === WebSocket.CLOSED) {
+                connectStream();
+            }
+        }
+    });
 
     function toggleFullscreen() {
         if (!document.fullscreenElement) {
@@ -65,31 +78,23 @@
     });
 
     // -------------------------------------------------------------------------
-    // 2. Video Stream WebSocket
+    // 2. Video Stream WebSocket & RequestAnimationFrame Loop
     // -------------------------------------------------------------------------
-    function connectStream() {
-        connStatus.innerText = "Connecting to Game Stream...";
-        streamWs = new WebSocket(streamWsUrl);
-        streamWs.binaryType = "blob";
+    function startRenderLoop() {
+        function renderStep() {
+            if (pendingFrameBlob && !isRendering) {
+                const blob = pendingFrameBlob;
+                pendingFrameBlob = null;
+                isRendering = true;
 
-        streamWs.onopen = () => {
-            console.log("[STREAM] Connected to PC GameGhost Server");
-            connStatus.innerText = "Connected! Waiting for frames...";
-            loadingOverlay.style.display = "none";
-            requestWakeLock();
-            startPingLoop();
-        };
-
-        streamWs.onmessage = (event) => {
-            if (event.data instanceof Blob) {
-                // Video frame received
-                createImageBitmap(event.data).then((bmp) => {
+                createImageBitmap(blob).then((bmp) => {
                     if (canvas.width !== bmp.width || canvas.height !== bmp.height) {
                         canvas.width = bmp.width;
                         canvas.height = bmp.height;
                     }
                     ctx.drawImage(bmp, 0, 0);
                     bmp.close();
+                    isRendering = false;
 
                     framesDrawn++;
                     const now = performance.now();
@@ -99,7 +104,41 @@
                         lastFpsUpdate = now;
                         fpsTag.innerText = `${currentFps} FPS`;
                     }
-                }).catch(() => {});
+                }).catch(() => {
+                    isRendering = false;
+                });
+            }
+            requestAnimationFrame(renderStep);
+        }
+        requestAnimationFrame(renderStep);
+    }
+
+    function connectStream() {
+        connStatus.innerText = "Connecting to Game Stream...";
+        try {
+            if (streamWs) {
+                streamWs.close();
+            }
+        } catch (e) {}
+
+        streamWs = new WebSocket(streamWsUrl);
+        streamWs.binaryType = "blob";
+
+        streamWs.onopen = () => {
+            console.log("[STREAM] Connected to PC GameGhost Server");
+            connStatus.innerText = "Connected! Waiting for frames...";
+            loadingOverlay.style.display = "none";
+            requestWakeLock();
+            startPingLoop();
+
+            // Send saved settings
+            applyStoredSettings();
+        };
+
+        streamWs.onmessage = (event) => {
+            if (event.data instanceof Blob) {
+                // Buffer newest frame, dropping older unprocessed frames to ensure 0-latency
+                pendingFrameBlob = event.data;
             } else if (typeof event.data === "string") {
                 try {
                     const data = jsonParse(event.data);
@@ -203,8 +242,6 @@
     // -------------------------------------------------------------------------
     // 4. On-Screen Buttons (D-Pad, Triggers, Actions, HUD Buttons)
     // -------------------------------------------------------------------------
-    const activeButtons = new Set();
-
     function setupButton(el, getPacket) {
         if (!el) return;
 
@@ -259,7 +296,7 @@
     });
 
     // -------------------------------------------------------------------------
-    // 5. Multi-Touch Analog Thumbsticks (Left: Movement, Right: Camera)
+    // 5. Multi-Touch Analog Thumbsticks (Left: Movement, Right: Camera) + L3/R3
     // -------------------------------------------------------------------------
     class TouchStick {
         constructor(zoneId, baseId, knobId, which) {
@@ -267,10 +304,12 @@
             this.base = document.getElementById(baseId);
             this.knob = document.getElementById(knobId);
             this.which = which; // "left" or "right"
+            this.clickBtnName = which === "left" ? "L3" : "R3";
             this.activeTouchId = null;
             this.radius = 50; // max distance from center
             this.centerX = 0;
             this.centerY = 0;
+            this.lastTapTime = 0;
             this.initListeners();
         }
 
@@ -281,6 +320,12 @@
             window.addEventListener("touchmove", (e) => this.onTouchMove(e), { passive: false });
             window.addEventListener("touchend", (e) => this.onTouchEnd(e), { passive: false });
             window.addEventListener("touchcancel", (e) => this.onTouchEnd(e), { passive: false });
+
+            // Knob double-tap or click for L3 / R3
+            this.knob.addEventListener("click", (e) => {
+                e.stopPropagation();
+                this.pulseClick();
+            });
 
             // Mouse fallback for testing on PC
             let mouseActive = false;
@@ -302,6 +347,14 @@
             });
         }
 
+        pulseClick() {
+            vibrate(30);
+            sendInput({ type: "btn", name: this.clickBtnName, val: 1 });
+            setTimeout(() => {
+                sendInput({ type: "btn", name: this.clickBtnName, val: 0 });
+            }, 60);
+        }
+
         onTouchStart(e) {
             if (this.activeTouchId !== null) return;
             const touch = e.changedTouches[0];
@@ -310,6 +363,14 @@
             const rect = this.base.getBoundingClientRect();
             this.centerX = rect.left + rect.width / 2;
             this.centerY = rect.top + rect.height / 2;
+
+            // Check for double tap near center for L3/R3 stick click
+            const now = performance.now();
+            const distFromCenter = Math.hypot(touch.clientX - this.centerX, touch.clientY - this.centerY);
+            if (distFromCenter < 25 && now - this.lastTapTime < 300) {
+                this.pulseClick();
+            }
+            this.lastTapTime = now;
 
             this.updatePosition(touch.clientX, touch.clientY);
             vibrate(10);
@@ -385,17 +446,68 @@
     const rightStick = new TouchStick("right-stick-zone", "right-stick-base", "right-stick-knob", "right");
 
     // -------------------------------------------------------------------------
-    // 6. Settings Modal
+    // 6. Settings & Persistence
     // -------------------------------------------------------------------------
+    function applyStoredSettings() {
+        const storedQuality = localStorage.getItem("gg_quality") || "80";
+        const storedFps = localStorage.getItem("gg_fps") || "60";
+        const storedMode = localStorage.getItem("gg_mode") || "gamepad";
+        const storedVibrate = localStorage.getItem("gg_vibrate") !== "false";
+        const storedOpacity = localStorage.getItem("gg_opacity") || "85";
+
+        const qEl = document.getElementById("setting-quality");
+        const fEl = document.getElementById("setting-fps");
+        const mEl = document.getElementById("setting-mode");
+        const vEl = document.getElementById("setting-vibrate");
+
+        if (qEl) qEl.value = storedQuality;
+        if (fEl) fEl.value = storedFps;
+        if (mEl) mEl.value = storedMode;
+        if (vEl) vEl.checked = storedVibrate;
+        if (settingOpacity) settingOpacity.value = storedOpacity;
+
+        vibrationEnabled = storedVibrate;
+        if (touchControls) {
+            touchControls.style.opacity = (parseInt(storedOpacity) / 100).toString();
+        }
+
+        sendInput({
+            type: "settings",
+            quality: parseInt(storedQuality),
+            fps: parseInt(storedFps),
+            mode: storedMode
+        });
+    }
+
     btnSettings.addEventListener("click", () => {
         settingsModal.classList.remove("hidden");
     });
+
+    if (settingOpacity) {
+        settingOpacity.addEventListener("input", (e) => {
+            const val = e.target.value;
+            if (touchControls) {
+                touchControls.style.opacity = (parseInt(val) / 100).toString();
+            }
+        });
+    }
 
     btnCloseSettings.addEventListener("click", () => {
         const quality = document.getElementById("setting-quality").value;
         const fps = document.getElementById("setting-fps").value;
         const mode = document.getElementById("setting-mode").value;
         vibrationEnabled = document.getElementById("setting-vibrate").checked;
+        const opacity = settingOpacity ? settingOpacity.value : "85";
+
+        localStorage.setItem("gg_quality", quality);
+        localStorage.setItem("gg_fps", fps);
+        localStorage.setItem("gg_mode", mode);
+        localStorage.setItem("gg_vibrate", vibrationEnabled);
+        localStorage.setItem("gg_opacity", opacity);
+
+        if (touchControls) {
+            touchControls.style.opacity = (parseInt(opacity) / 100).toString();
+        }
 
         sendInput({
             type: "settings",
@@ -407,8 +519,10 @@
         settingsModal.classList.add("hidden");
     });
 
-    // Start streaming connection on load
+    // Start rendering loop and connection on load
     window.addEventListener("DOMContentLoaded", () => {
+        startRenderLoop();
+        applyStoredSettings();
         connectStream();
     });
 })();

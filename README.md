@@ -89,30 +89,24 @@ Terminal output:
 
 ---
 
-### 2. On Your Android Phone (Termux Native Client)
+### 2. On Your Android Phone (Browser or Native Client)
 
-#### A. Install Prerequisites in Termux
-Open Termux on your phone and run:
+#### Option A. Instant Mobile Browser Portal (Zero Apps or Setup Required!)
+Open the GameGhost portal directly in Chrome, Brave, or Firefox on your phone:
 ```bash
-pkg update
-pkg install -y python git x11-repo
+# Auto-detects PC host and opens portal in phone browser:
+gameghost open
+
+# Or using the ultra-short mobile alias:
+gg open
+```
+Tap **"TAP TO ENTER FULLSCREEN"** to lock into landscape PlayStation Portal mode.
+
+#### Option B. Native Termux SDL2 Client (Optional via Termux-X11)
+```bash
 pkg install -y termux-x11-nightly python-pygame
-pip install websockets rich
+gameghost client
 ```
-
-#### B. Clone & Launch GameGhost Client
-```bash
-git clone https://github.com/rayzien/gameghost.git
-cd gameghost
-
-# Auto-discovers PC host over hotspot Wi-Fi:
-./bin/gameghost client
-
-# Or connect to specific host IP:
-./bin/gameghost client 10.176.124.73
-```
-
-Open the **Termux-X11** app on your phone. You will see the game stream full-screen with the on-screen touch controller overlay active.
 
 ---
 
@@ -138,10 +132,15 @@ gameghost list
 
 | Command | Arguments | Purpose |
 | :--- | :--- | :--- |
-| `gameghost host` | `--fps <int>`, `--quality <int>`, `--scale <float>` | Start streaming host and virtual controller |
-| `gameghost dmc5` | `--fps <int>`, `--quality <int>` | Launch Devil May Cry 5 + stream to phone |
-| `gameghost play <id>` | `<game_id>` | Launch selected game + stream to phone |
+| `gg` | None | Interactive mobile touch menu (for phone typing) |
+| `gameghost open` / `gg open` | `[host_ip]` | Open handheld portal directly in mobile browser |
 | `gameghost client` | `[host_ip]`, `--fullscreen` | Launch native SDL2 handheld client on phone |
+| `gameghost scan` / `gg scan` | None | Scan Wi-Fi / hotspot subnet for PC gaming host |
+| `gameghost host` | `--fps <int>`, `--quality <int>`, `--scale <float>` | Start streaming host, virtual controller & web portal |
+| `gameghost stop` / `gg stop` | None | Stop background GameGhost host process |
+| `gameghost status` / `gg status`| None | Display active IP, host status, and ports |
+| `gameghost dmc5` | `--fps <int>`, `--quality <int>` | Launch Devil May Cry 5 + stream to phone |
+| `gameghost play <id>` | `<game_id>` | Launch selected game (local or remote) + stream |
 | `gameghost list` | None | List detected PC games and installation paths |
 | `gameghost gamepad` | None | Verify `/dev/uinput` hardware virtual gamepad |
 
