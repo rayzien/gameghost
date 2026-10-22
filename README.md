@@ -13,11 +13,12 @@
 ```
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Version: 1.3.0](https://img.shields.io/badge/Version-1.3.0-brightgreen.svg)](https://github.com/rayzien/gameghost/releases)
+[![Version: 1.4.0](https://img.shields.io/badge/Version-1.4.0-brightgreen.svg)](https://github.com/rayzien/gameghost/releases)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-brightgreen.svg)](https://www.python.org/)
 [![Platform: Linux](https://img.shields.io/badge/Platform-Linux-orange.svg)](https://kernel.org)
 [![Client: Termux / Native SDL2](https://img.shields.io/badge/Client-Termux%20%7C%20Native%20SDL2-purple.svg)](https://termux.dev)
 [![Virtual Gamepad: uinput Xbox 360](https://img.shields.io/badge/Gamepad-uinput%20Xbox%20360-success.svg)](https://www.kernel.org/doc/html/latest/input/uinput.html)
+[![Controllers: Touch + Physical Gamepads](https://img.shields.io/badge/Hardware-Bluetooth%20%2F%20USB%20OTG%20Gamepads-teal.svg)](https://github.com/rayzien/gameghost)
 [![Orientation: Forced Landscape](https://img.shields.io/badge/Display-Forced%20Landscape-blueviolet.svg)](https://github.com/rayzien/gameghost)
 
 ---
@@ -66,19 +67,32 @@ Built on the high-efficiency architecture of **CPUGhost**, GameGhost operates as
      * **Metal Gear Rising: Revengeance** (`gg mgr`)
      * **Rise of the Tomb Raider** (`gg rottr`)
 
-4. **Native Multi-Touch On-Screen Gamepad**
+4. **Native Multi-Touch On-Screen Gamepad with L3 & R3**
    * Uses low-level SDL2 multi-touch events (`pygame.FINGERDOWN`, `pygame.FINGERMOTION`, `pygame.FINGERUP`).
    * **Dual Virtual Analog Thumbsticks**: Left Stick (LS - Movement) and Right Stick (RS - Camera).
+   * **Thumbstick Click Buttons**: L3 & R3 buttons mapped right above the sticks for lock-on and sprint.
    * **Action Cluster**: Y (Triangle), X (Square), B (Circle), A (Cross).
    * **Directional Pad (D-Pad)**: Up, Down, Left, Right for instant style switching in Devil May Cry 5.
    * **Shoulders & Triggers**: L1 (LB), R1 (RB), L2 (LT analog trigger), R2 (RT analog trigger).
    * **System Buttons**: Select / Share, Start / Options, Home / Guide.
 
-5. **Hardware Virtual Xbox 360 Gamepad (Linux uinput)**
+5. **Physical Gamepad & Keyboard Support on Phone**
+   * Plug in or pair any physical controller: Xbox Wireless Controller, PS4/PS5 DualShock/DualSense, Razer Kishi, Backbone, or 8BitDo gamepad.
+   * Native hot-plug detection via SDL2 joystick subsystem (`JOYDEVICEADDED`).
+   * Full analog stick deadzone filtering and trigger sensitivity.
+   * Physical USB/Bluetooth keyboard mapping fallback for PC & Termux.
+
+6. **"Looking for Inputs from PC" Standby Radar & Auto-Reconnect**
+   * Even when your Gaming PC is switched off or rebooting, the handheld client remains smooth and responsive.
+   * Displays an animated standby radar actively scanning for PC signal without terminal spam or disconnection crashes.
+   * Automatically discovers the PC host and begins streaming 60 FPS video the moment the PC powers on.
+   * Bounded input buffers drop stale touch events during downtime, guaranteeing zero input lag upon reconnect.
+
+7. **Hardware Virtual Xbox 360 Gamepad (Linux uinput)**
    * Emulates a native Microsoft Xbox 360 controller directly in the Linux kernel via `/dev/uinput`.
    * Recognized automatically by Steam, Proton, Wine, and native Linux games.
 
-6. **CPUGhost-Derived Auto-Update Engine**
+8. **CPUGhost-Derived Auto-Update Engine**
    * Modeled directly after CPUGhost's auto-update system.
    * Every launch silently checks GitHub (`rayzien/gameghost`) for the latest release commits and applies updates automatically.
    * Can also be run explicitly via `gameghost update`.

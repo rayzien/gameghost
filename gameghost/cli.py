@@ -248,9 +248,12 @@ def cmd_status(args):
     pid = get_host_pid()
     status_str = f"[bold green]RUNNING (PID {pid})[/bold green]" if pid else "[dim]STOPPED[/dim]"
 
-    gp = VirtualGamepad()
-    pad_str = "[bold green]Active (Hardware Xbox 360 /dev/uinput)[/bold green]" if gp.active else "[bold yellow]Fallback (Keyboard)[/bold yellow]"
-    gp.close()
+    if is_phone_environment():
+        pad_str = "[bold cyan]Active (Handheld Touch & Gamepad Subsystem)[/bold cyan]"
+    else:
+        gp = VirtualGamepad()
+        pad_str = "[bold green]Active (Hardware Xbox 360 /dev/uinput)[/bold green]" if gp.active else "[bold yellow]Fallback (Keyboard)[/bold yellow]"
+        gp.close()
 
     table = Table(title="[bold yellow]GameGhost System & Network Status[/bold yellow]")
     table.add_column("Property", style="cyan")

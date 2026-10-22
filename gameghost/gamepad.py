@@ -102,8 +102,16 @@ class VirtualGamepad:
                 self._handle_trigger(name, fval)
 
             elif p_type == "dpad":
-                dx = int(data.get("x", 0))
-                dy = int(data.get("y", 0))
+                if "x" in data or "y" in data:
+                    dx = int(data.get("x", 0))
+                    dy = int(data.get("y", 0))
+                elif "dir" in data:
+                    d = str(data.get("dir", "")).lower()
+                    val = 1 if data.get("val", 1) else 0
+                    dir_coords = {"up": (0, -1), "down": (0, 1), "left": (-1, 0), "right": (1, 0)}
+                    dx, dy = dir_coords.get(d, (0, 0)) if val else (0, 0)
+                else:
+                    dx, dy = 0, 0
                 self._handle_dpad(dx, dy)
 
     def _handle_button(self, name: str, val: int):
