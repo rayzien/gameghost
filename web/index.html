@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#0a0a0f">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>GameGhost | Handheld Portal</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div id="app" class="handheld-container">
+        <!-- Live Game Video Canvas -->
+        <div class="screen-wrapper">
+            <canvas id="game-canvas"></canvas>
+            <div id="loading-overlay" class="overlay-center">
+                <div class="loader-spinner"></div>
+                <h2>GAMEGHOST PORTAL</h2>
+                <p id="conn-status">Connecting to PC Game Stream...</p>
+                <button id="btn-fullscreen-prompt" class="hud-btn btn-primary">TAP TO ENTER FULLSCREEN</button>
+            </div>
+        </div>
+
+        <!-- Top Minimal HUD Bar -->
+        <header class="hud-top">
+            <div class="hud-left">
+                <span class="brand-tag">GHOST // PORTAL</span>
+                <span id="latency-tag" class="hud-pill">-- ms</span>
+                <span id="fps-tag" class="hud-pill">-- FPS</span>
+            </div>
+            <div class="hud-center">
+                <button id="btn-select" class="hud-btn-mini" data-btn="SELECT">SHARE</button>
+                <button id="btn-home" class="hud-btn-mini btn-glow" data-btn="HOME">PS</button>
+                <button id="btn-start" class="hud-btn-mini" data-btn="START">OPTIONS</button>
+            </div>
+            <div class="hud-right">
+                <button id="btn-audio" class="hud-btn-icon" title="Toggle Audio">🔊</button>
+                <button id="btn-fullscreen" class="hud-btn-icon" title="Fullscreen">⛶</button>
+                <button id="btn-settings" class="hud-btn-icon" title="Settings">⚙</button>
+            </div>
+        </header>
+
+        <!-- On-Screen Virtual Controls Layer -->
+        <div id="touch-controls" class="touch-layer">
+            <!-- Left Side: Shoulder Buttons, D-Pad, Left Thumbstick -->
+            <div class="control-zone zone-left">
+                <div class="shoulder-group left-shoulders">
+                    <button class="game-btn btn-shoulder" data-btn="L2">L2</button>
+                    <button class="game-btn btn-shoulder" data-btn="L1">L1</button>
+                </div>
+
+                <div class="dpad-cluster">
+                    <button class="dpad-btn dpad-up" data-dpad="up">▲</button>
+                    <button class="dpad-btn dpad-left" data-dpad="left">◀</button>
+                    <div class="dpad-center"></div>
+                    <button class="dpad-btn dpad-right" data-dpad="right">▶</button>
+                    <button class="dpad-btn dpad-down" data-dpad="down">▼</button>
+                </div>
+
+                <div class="stick-boundary" id="left-stick-zone">
+                    <div class="stick-base" id="left-stick-base">
+                        <div class="stick-knob" id="left-stick-knob">LS</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Side: Shoulder Buttons, Action Cluster (PS style), Right Thumbstick -->
+            <div class="control-zone zone-right">
+                <div class="shoulder-group right-shoulders">
+                    <button class="game-btn btn-shoulder" data-btn="R1">R1</button>
+                    <button class="game-btn btn-shoulder" data-btn="R2">R2</button>
+                </div>
+
+                <div class="action-cluster">
+                    <button class="action-btn btn-triangle" data-btn="Y">▲</button>
+                    <button class="action-btn btn-square" data-btn="X">■</button>
+                    <button class="action-btn btn-circle" data-btn="B">●</button>
+                    <button class="action-btn btn-cross" data-btn="A">✕</button>
+                </div>
+
+                <div class="stick-boundary" id="right-stick-zone">
+                    <div class="stick-base" id="right-stick-base">
+                        <div class="stick-knob" id="right-stick-knob">RS</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Modal -->
+        <div id="settings-modal" class="modal hidden">
+            <div class="modal-card">
+                <h3>PORTAL STREAM SETTINGS</h3>
+                <div class="setting-row">
+                    <label>Target FPS:</label>
+                    <select id="setting-fps">
+                        <option value="30">30 FPS (Battery Saver)</option>
+                        <option value="60" selected>60 FPS (Ultra Smooth)</option>
+                        <option value="90">90 FPS (High Refresh)</option>
+                    </select>
+                </div>
+                <div class="setting-row">
+                    <label>Stream Quality:</label>
+                    <select id="setting-quality">
+                        <option value="60">Low (Fastest)</option>
+                        <option value="75" selected>Balanced (Recommended)</option>
+                        <option value="90">High (Crisp)</option>
+                    </select>
+                </div>
+                <div class="setting-row">
+                    <label>Haptic Vibration:</label>
+                    <input type="checkbox" id="setting-vibrate" checked>
+                </div>
+                <div class="setting-row">
+                    <label>Controller Mode:</label>
+                    <select id="setting-mode">
+                        <option value="gamepad" selected>Xbox 360 Gamepad</option>
+                        <option value="keyboard_fallback">Keyboard/Mouse Mapper</option>
+                    </select>
+                </div>
+                <button id="btn-close-settings" class="hud-btn btn-primary" style="margin-top: 15px; width: 100%;">APPLY & CLOSE</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

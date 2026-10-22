@@ -1,0 +1,68 @@
+#!/bin/sh
+# ==============================================================================
+# GameGhost Universal CLI Launcher (Compatible with Linux & Android Termux)
+# ==============================================================================
+set -e
+
+SOURCE="$0"
+while [ -h "$SOURCE" ]; do
+  DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
+  SOURCE="$(readlink "$SOURCE")"
+  [ "${SOURCE%/*}" = "$SOURCE" ] && SOURCE="$DIR/$SOURCE"
+done
+SCRIPT_DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
+PROJECT_DIR="$( cd -P "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd )"
+
+# Termux environment support
+if [ -d "/data/data/com.termux/files/usr/bin" ]; then
+    export PATH="/data/data/com.termux/files/usr/bin:${HOME}/bin:${PATH}"
+fi
+export PATH="${HOME}/.local/bin:${PATH}"
+
+# Ensure DISPLAY & XAUTHORITY
+if [ -z "$DISPLAY" ] && [ -S "/tmp/.X11-unix/X0" ]; then
+    export DISPLAY=":0"
+fi
+
+if [ -z "$XAUTHORITY" ]; then
+    UID_NUM="$(id -u 2>/dev/null || echo 1000)"
+    if ls /run/user/${UID_NUM}/.mutter-Xwaylandauth* >/dev/null 2>&1; then
+        export XAUTHORITY="$(ls -1 /run/user/${UID_NUM}/.mutter-Xwaylandauth* 2>/dev/null | head -n 1)"
+    elif [ -f "${HOME}/.Xauthority" ]; then
+        export XAUTHORITY="${HOME}/.Xauthority"
+    fi
+fi
+
+export PYGAME_HIDE_SUPPORT_PROMPT="1"
+export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH}"
+
+# In Termux/Android, use system python3 directly
+if [ -n "$TERMUX_VERSION" ] || [ -d "/data/data/com.termux/files" ]; then
+    exec python3 -m gameghost.cli "$@"
+fi
+
+# Share/use existing virtualenv or project venv
+VENV_DIR="${PROJECT_DIR}/.venv"
+SHARED_VENV="/home/zero/Desktop/cpughost/.venv"
+
+if [ -f "${SHARED_VENV}/bin/python" ] && [ ! -d "${VENV_DIR}" ]; then
+    VENV_PYTHON="${SHARED_VENV}/bin/python"
+elif [ -f "${VENV_DIR}/bin/python" ]; then
+    VENV_PYTHON="${VENV_DIR}/bin/python"
+else
+    echo "[INFO] Initializing GameGhost Python environment..."
+    DEPS="fastapi uvicorn websockets mss pillow pynput requests rich click evdev"
+    if command -v uv >/dev/null 2>&1; then
+        uv venv "${VENV_DIR}"
+        uv pip install --python "${VENV_DIR}/bin/python" $DEPS
+        VENV_PYTHON="${VENV_DIR}/bin/python"
+    else
+        python3 -m venv "${VENV_DIR}"
+        "${VENV_DIR}/bin/pip" install --upgrade pip
+        "${VENV_DIR}/bin/pip" install $DEPS
+        VENV_PYTHON="${VENV_DIR}/bin/python"
+    fi
+    echo "[OK] GameGhost environment initialized."
+fi
+
+exec "$VENV_PYTHON" -m gameghost.cli "$@"
