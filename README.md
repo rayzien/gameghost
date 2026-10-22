@@ -13,7 +13,7 @@
 ```
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Version: 1.1.0](https://img.shields.io/badge/Version-1.1.0-brightgreen.svg)](https://github.com/rayzien/gameghost/releases)
+[![Version: 1.2.0](https://img.shields.io/badge/Version-1.2.0-brightgreen.svg)](https://github.com/rayzien/gameghost/releases)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-brightgreen.svg)](https://www.python.org/)
 [![Platform: Linux](https://img.shields.io/badge/Platform-Linux-orange.svg)](https://kernel.org)
 [![Client: Termux / Native SDL2](https://img.shields.io/badge/Client-Termux%20%7C%20Native%20SDL2-purple.svg)](https://termux.dev)
@@ -30,7 +30,7 @@
 Built on the high-efficiency architecture of **CPUGhost**, GameGhost operates as a pure native client-server system:
 * **Host (Gaming PC)**: Captures game video at native refresh rates, streams over optimized binary WebSockets, and maps incoming packets directly into a hardware-level virtual Xbox 360 gamepad via Linux `/dev/uinput`.
 * **Client (Phone / Termux)**: A native SDL2/Pygame-CE handheld viewer with direct framebuffer rendering, auto-discovery over hotspot Wi-Fi, and a custom multi-touch on-screen controller overlay.
-* **Auto-Update System**: Automatically syncs the latest releases and fixes from GitHub on both Host and Client without manual intervention.
+* **Auto-Update System**: Derived from CPUGhost, GameGhost automatically checks GitHub (`origin/main`) and seamlessly applies updates on launch, or via `gameghost update`.
 
 ---
 
@@ -58,9 +58,9 @@ Built on the high-efficiency architecture of **CPUGhost**, GameGhost operates as
    * Emulates a native Microsoft Xbox 360 controller directly in the Linux kernel via `/dev/uinput`.
    * Recognized automatically by Steam, Proton, Wine, and native Linux games.
 
-4. **Integrated Auto-Update Engine**
-   * Derived from the CPUGhost auto-update architecture.
-   * Every launch of `gameghost host` or `gameghost client` silently queries GitHub for the latest release commits and applies updates automatically.
+4. **CPUGhost-Derived Auto-Update Engine**
+   * Modeled directly after CPUGhost's auto-update system.
+   * Every launch of `gameghost host` or `gameghost client` silently queries GitHub (`rayzien/gameghost`) for the latest release commits and applies updates automatically.
    * Can also be run explicitly via `gameghost update`.
 
 5. **Zero-Configuration Hotspot Auto-Discovery**
@@ -85,14 +85,17 @@ gameghost dmc5
 Terminal output:
 ```text
 ==================================================================
-       [GAMEGHOST HANDHELD STREAMING HOST ONLINE]
+       GAMEGHOST HANDHELD STREAMING HOST ONLINE
 ==================================================================
  [HOST IP]              : 10.176.124.73
  [STREAM WEBSOCKET]     : ws://10.176.124.73:8900
  [AUDIO WEBSOCKET]      : ws://10.176.124.73:8901
  [VIRTUAL CONTROLLER]   : Active (Hardware Xbox 360 Pad via uinput)
- [HOTSPOT BEACON]       : UDP Broadcast Active
+ [HOTSPOT BEACON]       : Active (UDP Auto-Discovery)
 ==================================================================
+
+[CLIENT CONNECT] On your phone (Termux), run:
+  gameghost client 10.176.124.73
 ```
 
 ---
@@ -105,19 +108,20 @@ Open Termux on your phone and run:
 pkg update
 pkg install -y python git x11-repo
 pkg install -y termux-x11-nightly python-pygame
-pip install websockets rich
+pip install websockets rich pillow
 ```
 
 #### B. Clone & Launch GameGhost Client
 ```bash
 git clone https://github.com/rayzien/gameghost.git
 cd gameghost
+./setup.sh
 
 # Auto-discovers PC host over hotspot Wi-Fi:
-./bin/gameghost client
+gameghost client
 
 # Or connect to specific host IP:
-./bin/gameghost client 10.176.124.73
+gameghost client 10.176.124.73
 ```
 
 Open the **Termux-X11** app on your phone. You will see the game stream full-screen with the on-screen touch controller overlay active.
@@ -129,6 +133,12 @@ Open the **Termux-X11** app on your phone. You will see the game stream full-scr
 To check for updates manually on either the PC host or the phone client:
 ```bash
 gameghost update
+```
+
+Options:
+```bash
+gameghost update --check   # Check if updates are available without applying
+gameghost update --force   # Force reset to latest upstream main branch
 ```
 
 The system automatically checks GitHub (`origin/main`) and pulls new patches before launching streaming sessions.
@@ -157,13 +167,17 @@ gameghost list
 
 | Command | Arguments | Purpose |
 | :--- | :--- | :--- |
-| `gameghost host` | `--fps <int>`, `--quality <int>`, `--scale <float>` | Start streaming host and virtual controller |
-| `gameghost dmc5` | `--fps <int>`, `--quality <int>` | Launch Devil May Cry 5 + stream to phone |
-| `gameghost play <id>` | `<game_id>` | Launch selected game + stream to phone |
-| `gameghost client` | `[host_ip]`, `--fullscreen` | Launch native SDL2 handheld client on phone |
-| `gameghost update` | None | Check GitHub and apply latest updates |
-| `gameghost list` | None | List detected PC games and installation paths |
-| `gameghost gamepad` | None | Verify `/dev/uinput` hardware virtual gamepad |
+| `gg` | None | Interactive mobile touch menu (for phone typing) |
+| `gameghost client` / `gg client` | `[host_ip]`, `--fullscreen` | Launch native SDL2 handheld client on phone |
+| `gameghost scan` / `gg scan` | None | Scan Wi-Fi / hotspot subnet for PC gaming host |
+| `gameghost host` / `gg host` | `--fps <int>`, `--quality <int>`, `--scale <float>` | Start streaming host and virtual controller |
+| `gameghost stop` / `gg stop` | None | Stop background GameGhost host process |
+| `gameghost status` / `gg status`| None | Display active IP, host status, and ports |
+| `gameghost dmc5` / `gg dmc5` | None | Launch Devil May Cry 5 + stream to phone |
+| `gameghost play <id>` | `<game_id>` | Launch selected game + stream |
+| `gameghost update` / `gg update`| `--force`, `--check` | Check GitHub and apply latest updates |
+| `gameghost list` / `gg list` | None | List detected PC games and installation paths |
+| `gameghost gamepad` / `gg gamepad` | None | Verify `/dev/uinput` hardware virtual gamepad |
 
 ---
 
@@ -192,18 +206,18 @@ gameghost list
 ```mermaid
 flowchart LR
     subgraph Host["Gaming PC (Host)"]
-        GAME[PC Game: DMC 5] --> CAP[Screen Capture: mss]
-        GAME --> AUD[Audio Capture: PulseAudio]
-        CAP --> S_WS[WebSocket Video Streamer :8900]
-        AUD --> A_WS[WebSocket Audio Streamer :8901]
-        DISC[Discovery Beacon :8990]
-        UINP[Virtual Gamepad: /dev/uinput] --> GAME
+        GAME["PC Game: DMC 5"] --> CAP["Screen Capture: mss"]
+        GAME --> AUD["Audio Capture: PulseAudio"]
+        CAP --> S_WS["WebSocket Video Streamer :8900"]
+        AUD --> A_WS["WebSocket Audio Streamer :8901"]
+        DISC["Discovery Beacon :8990"]
+        UINP["Virtual Gamepad: /dev/uinput"] --> GAME
     end
 
     subgraph Client["Handheld Client (Android Phone / Termux)"]
-        CLNT[gameghost client]
-        SDL[Native SDL2 Surface / Termux-X11]
-        TOUCH[Native Multi-Touch Engine]
+        CLNT["gameghost client"]
+        SDL["Native SDL2 Surface / Termux-X11"]
+        TOUCH["Native Multi-Touch Engine"]
     end
 
     S_WS -->|Binary JPEG Stream| CLNT

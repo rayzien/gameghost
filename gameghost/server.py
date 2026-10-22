@@ -1,15 +1,13 @@
 import os
 import sys
 import asyncio
-import threading
 from pathlib import Path
 from rich.console import Console
 
-from .config import load_config, get_local_ip
+from .config import load_config, get_local_ip, save_host_pid, clear_host_pid
 from .stream_server import GameStreamServer
 from .audio_server import GameAudioServer
 from .discovery import GameDiscovery
-from .launcher import list_games, launch_game
 
 console = Console()
 
@@ -39,19 +37,21 @@ class GameGhostHost:
 
     async def run_async(self):
         self.running = True
+        save_host_pid(os.getpid())
 
         console.print("")
         console.print("[bold cyan]==================================================================[/bold cyan]")
-        console.print("[bold green]       [GAMEGHOST HANDHELD STREAMING HOST ONLINE][/bold green]")
+        console.print("[bold green]       GAMEGHOST HANDHELD STREAMING HOST ONLINE[/bold green]")
         console.print("[bold cyan]==================================================================[/bold cyan]")
         console.print(f" [HOST IP]              : [bold white]{self.local_ip}[/bold white]")
         console.print(f" [STREAM WEBSOCKET]     : ws://{self.local_ip}:{self.stream_port}")
         console.print(f" [AUDIO WEBSOCKET]      : ws://{self.local_ip}:{self.audio_port}")
-        console.print(f" [VIRTUAL CONTROLLER]   : [bold green]Active (Hardware Xbox 360 Pad via uinput)[/bold green]")
-        console.print(f" [HOTSPOT BEACON]       : UDP Broadcast Active")
+        v_status = "[bold green]Active (Hardware Xbox 360 Pad via uinput)[/bold green]" if self.stream_server.gamepad.active else "[bold yellow]Fallback (Keyboard mapper)[/bold yellow]"
+        console.print(f" [VIRTUAL CONTROLLER]   : {v_status}")
+        console.print(f" [HOTSPOT BEACON]       : [bold green]Active (UDP Auto-Discovery)[/bold green]")
         console.print("[bold cyan]==================================================================[/bold cyan]")
-        console.print(f"\n[bold green][CONNECT] Run this on your Phone / Termux:[/bold green]")
-        console.print(f"   [bold yellow]gameghost client {self.local_ip}[/bold yellow]\n")
+        console.print(f"\n[bold green][CLIENT CONNECT][/bold green] On your phone (Termux), run:")
+        console.print(f"  [bold cyan]gameghost client {self.local_ip}[/bold cyan]\n")
 
         # 1. Start discovery beacon
         self.discovery.start_broadcaster()
@@ -74,10 +74,12 @@ class GameGhostHost:
             asyncio.run(self.run_async())
         except KeyboardInterrupt:
             self.stop()
+        finally:
+            clear_host_pid()
 
     def stop(self):
         self.running = False
+        clear_host_pid()
         self.discovery.stop()
         self.stream_server.stop()
-        self.audio_server.stop()
-        console.print("[HOST] GameGhost Host stopped.")
+        console.print("[INFO] GameGhost Host stopped.")

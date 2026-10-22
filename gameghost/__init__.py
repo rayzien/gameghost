@@ -4,9 +4,9 @@ Stream any PC game directly to your phone with full low-latency on-screen gamepa
 
 Credits:
 - pheonix14: Core architectural foundation (CPUGhost headless screen streaming & network discovery)
-- rayzien: GameGhost concept, handheld controller system, Linux uinput virtual gamepad engine
+- rayzien: GameGhost creator, handheld touch overlay, Linux uinput virtual gamepad engine
 """
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 __author__ = "rayzien, pheonix14"
 __credits__ = ["rayzien", "pheonix14"]
