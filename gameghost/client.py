@@ -33,6 +33,7 @@ import websockets
 from rich.console import Console
 
 from .config import (
+    log_client,
     load_config,
     get_last_host,
     save_last_host,
@@ -293,31 +294,31 @@ class GameGhostViewer:
         self.quick_chips = {
             "layout": {
                 "rect": pygame.Rect(start_chip_x, chip_y, chip_w, chip_h),
-                "label": f"🎮 {self.controller_theme[:2].upper()}",
+                "label": f"[PAD] {self.controller_theme[:2].upper()}",
                 "action": "toggle_layout",
                 "tooltip": "Layout: PS / Xbox"
             },
             "preset": {
                 "rect": pygame.Rect(start_chip_x + int(chip_w * 1.08), chip_y, chip_w, chip_h),
-                "label": f"📺 {self.preset.upper()}",
+                "label": f"[RES] {self.preset.upper()}",
                 "action": "cycle_preset",
                 "tooltip": "Quality: 720p/1080p/2K/4K"
             },
             "fps": {
                 "rect": pygame.Rect(start_chip_x + int(chip_w * 2.16), chip_y, chip_w, chip_h),
-                "label": f"⚡ {'AUTO' if self.auto_fps else f'{self.target_fps}F'}",
+                "label": f"[FPS] {'AUTO' if self.auto_fps else f'{self.target_fps}F'}",
                 "action": "cycle_fps",
                 "tooltip": "Max FPS & Auto-FPS"
             },
             "theme": {
                 "rect": pygame.Rect(start_chip_x + int(chip_w * 3.24), chip_y, chip_w, chip_h),
-                "label": f"🎨 {self.overlay_theme[:3].upper()}",
+                "label": f"[THM] {self.overlay_theme[:3].upper()}",
                 "action": "cycle_theme",
                 "tooltip": "Color Border Theme"
             },
             "view": {
                 "rect": pygame.Rect(start_chip_x + int(chip_w * 4.32), chip_y, chip_w, chip_h),
-                "label": f"👁️ {self.visibility_mode[:3].upper()}",
+                "label": f"[VIEW] {self.visibility_mode[:3].upper()}",
                 "action": "cycle_visibility",
                 "tooltip": "Overlay Visibility"
             },
@@ -463,6 +464,8 @@ class GameGhostViewer:
                         if self.launch_game:
                             await ws.send(json.dumps({"type": "launch", "game": self.launch_game}))
                             console.print(f"[bold green][REMOTE LAUNCH][/bold green] Requested PC to launch: {self.launch_game}")
+                            log_client(f"Requested PC to launch: {self.launch_game}")
+                            self.notify(f"Launching {self.launch_game} on PC...", duration=5.0)
 
                         async def _recv_frames():
                             while self.running and self.connected:
@@ -488,6 +491,8 @@ class GameGhostViewer:
                                                 g = data.get("game", "")
                                                 status = "Started successfully" if succ else "Failed to start"
                                                 console.print(f"[bold green][PC RESPONSE][/bold green] {g}: {status}")
+                                                log_client(f"PC launch response: {g} - {status}")
+                                                self.notify(f"PC: {g} {status}", duration=4.0)
                                             elif mtype == "settings_ack":
                                                 pass
                                         except Exception:
