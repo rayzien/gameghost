@@ -1,7 +1,8 @@
 # GameGhost v1.7.3 — Termux-X11 Stream Engine, Auto-Focus & Performance Release
 
 > **High-Performance PC Gaming Handheld Cast & Universal Controller Subsystem**  
-> *Created by rayzien & pheonix14*
+> *Created by rayzien & pheonix14*  
+> *Based on CPUGhost (work in progress) — works exactly like PlayStation Portal (PS Portal) and cloud gaming, casting local PC games directly to phone anywhere in range.*
 
 GameGhost v1.7.3 delivers complete streaming fixes and optimizations for **Android Termux with Termux-X11**, introducing zero-black-screen root window compositing, automated game window focus via `_NET_ACTIVE_WINDOW`, multi-socket Termux display detection (`:0`, `:1`, `:2`), host software rasterizer isolation, non-blocking frame queueing, and cached surface scaling for butter-smooth 60 FPS mobile streaming.
 
