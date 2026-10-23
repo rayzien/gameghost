@@ -318,6 +318,7 @@ def cmd_client(args):
             max_fps=getattr(args, "max_fps", None),
             auto_fps=getattr(args, "auto_fps", None),
             visibility=getattr(args, "visibility", None),
+            audio_port=getattr(args, "audio_port", None),
         )
     except KeyboardInterrupt:
         console.print("\n[yellow][CLIENT] GameGhost handheld client closed.[/yellow]")
@@ -629,6 +630,7 @@ def main():
     p_client.add_argument("--max-fps", type=int, default=None, help="Maximum FPS ceiling for auto-FPS")
     p_client.add_argument("--auto-fps", action="store_true", default=None, help="Enable dynamic auto-FPS adjustment")
     p_client.add_argument("--visibility", type=str, default=None, choices=["full", "minimal", "hidden", "off"], help="Overlay visibility mode")
+    p_client.add_argument("--audio-port", type=int, default=None, help="Audio streaming port (default 8901)")
 
     # scan command
     subparsers.add_parser("scan", help="Scan network for GameGhost PC hosts")
