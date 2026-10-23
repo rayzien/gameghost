@@ -240,10 +240,10 @@ class GameGhostViewer:
         # Style profiles: Xbox (Y, B, A, X) vs PlayStation (Triangle, Circle, Cross, Square)
         if self.controller_theme == "playstation":
             face_btns = {
-                "Y": {"x": face_cx, "y": face_cy - spacing, "r": btn_r, "type": "btn", "name": "Y", "color": (46, 204, 113), "label": "△"},
-                "A": {"x": face_cx, "y": face_cy + spacing, "r": btn_r, "type": "btn", "name": "A", "color": (52, 152, 219), "label": "✕"},
-                "X": {"x": face_cx - spacing, "y": face_cy, "r": btn_r, "type": "btn", "name": "X", "color": (243, 104, 224), "label": "□"},
-                "B": {"x": face_cx + spacing, "y": face_cy, "r": btn_r, "type": "btn", "name": "B", "color": (238, 82, 83), "label": "○"},
+                "Y": {"x": face_cx, "y": face_cy - spacing, "r": btn_r, "type": "btn", "name": "Y", "color": (46, 204, 113), "label": "T"},
+                "A": {"x": face_cx, "y": face_cy + spacing, "r": btn_r, "type": "btn", "name": "A", "color": (52, 152, 219), "label": "X"},
+                "X": {"x": face_cx - spacing, "y": face_cy, "r": btn_r, "type": "btn", "name": "X", "color": (243, 104, 224), "label": "S"},
+                "B": {"x": face_cx + spacing, "y": face_cy, "r": btn_r, "type": "btn", "name": "B", "color": (238, 82, 83), "label": "O"},
             }
             shldr_labels = {"L1": "L1", "L2": "L2", "R1": "R1", "R2": "R2"}
             sys_labels = {"SELECT": "SHR", "HOME": "PS", "START": "OPT"}
