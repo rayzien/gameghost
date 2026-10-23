@@ -1,10 +1,11 @@
 import os
 import sys
 import glob
+import shlex
 import subprocess
 import shutil
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple, List
 
 from .config import log_host
 
@@ -53,20 +54,58 @@ GAMES_CATALOG: Dict[str, Dict[str, Any]] = {
     }
 }
 
-def parse_desktop_exec(desktop_path: str) -> Optional[list]:
-    """Parse Exec= line from a .desktop file, stripping desktop field codes."""
+GAME_ALIASES: Dict[str, str] = {
+    "dmc": "dmc5",
+    "dmc5": "dmc5",
+    "devil may cry": "dmc5",
+    "devil may cry 5": "dmc5",
+    "devilmaycry5": "dmc5",
+    "sekiro": "sekiro",
+    "shadows die twice": "sekiro",
+    "tekken": "tekken8",
+    "tekken8": "tekken8",
+    "tekken 8": "tekken8",
+    "polaris": "tekken8",
+    "mk": "mk11",
+    "mk11": "mk11",
+    "mortal kombat": "mk11",
+    "mortal kombat 11": "mk11",
+    "mortalkombat11": "mk11",
+    "mgr": "mgr",
+    "metal gear": "mgr",
+    "metal gear rising": "mgr",
+    "metal gear rising revengeance": "mgr",
+    "revengeance": "mgr",
+    "rottr": "rottr",
+    "tomb raider": "rottr",
+    "rise of the tomb raider": "rottr"
+}
+
+
+def parse_desktop_entry(desktop_path: str) -> Tuple[Optional[List[str]], Optional[str]]:
+    """Parse Exec= and Path= lines from a .desktop file, handling shell quotes cleanly."""
+    cmd = None
+    work_dir = None
     try:
         with open(desktop_path, "r", encoding="utf-8", errors="ignore") as f:
             for line in f:
                 line = line.strip()
-                if line.startswith("Exec="):
+                if line.startswith("Exec=") and not cmd:
                     cmd_line = line[5:].strip()
-                    parts = cmd_line.split()
-                    cleaned = [p for p in parts if not p.startswith("%")]
-                    return cleaned if cleaned else None
+                    parts = shlex.split(cmd_line)
+                    cmd = [p for p in parts if not p.startswith("%")]
+                elif line.startswith("Path=") and not work_dir:
+                    work_dir = line[5:].strip()
     except Exception:
         pass
-    return None
+    return cmd, work_dir
+
+
+def parse_desktop_exec(desktop_path: str) -> Optional[List[str]]:
+    """Backward-compatible helper returning parsed Exec line."""
+    cmd, _ = parse_desktop_entry(desktop_path)
+    return cmd
+
 
 def is_phone_environment() -> bool:
     """Detect if executing on an Android phone (Termux) or Linux PC host."""
@@ -80,6 +119,7 @@ def is_phone_environment() -> bool:
     if not os.path.exists("/dev/uinput"):
         return True
     return False
+
 
 def list_games() -> Dict[str, Dict[str, Any]]:
     """Return available games with their installed status."""
@@ -102,9 +142,11 @@ def list_games() -> Dict[str, Dict[str, Any]]:
         catalog[gid] = c
     return catalog
 
-def launch_game(game_id: str = "dmc5") -> Optional[subprocess.Popen]:
-    """Launch a game by ID on the PC host with environment propagation."""
-    info = GAMES_CATALOG.get(game_id.lower())
+
+def launch_game(game_id: str = "dmc5", mute: bool = False) -> Optional[subprocess.Popen]:
+    """Launch a game by ID on the PC host with environment propagation and optional test mute."""
+    normalized_id = GAME_ALIASES.get(game_id.lower().strip(), game_id.lower().strip())
+    info = GAMES_CATALOG.get(normalized_id)
     if not info:
         print(f"[LAUNCHER] Game '{game_id}' not found in catalog.")
         log_host(f"Game launch rejected: '{game_id}' not found in catalog")
@@ -123,6 +165,15 @@ def launch_game(game_id: str = "dmc5") -> Optional[subprocess.Popen]:
             env["XAUTHORITY"] = matches[0]
         elif os.path.exists(os.path.expanduser("~/.Xauthority")):
             env["XAUTHORITY"] = os.path.expanduser("~/.Xauthority")
+
+    # Mute audio during testing to prevent disturbing user
+    mute_mode = mute or os.environ.get("GAMEGHOST_MUTE_TEST") == "1"
+    if mute_mode:
+        env["WINEDLLOVERRIDES"] = "winepulse.drv=d;winealsa=d;" + env.get("WINEDLLOVERRIDES", "")
+        env["PULSE_SERVER"] = "/dev/null"
+        env["ALSA_CONFIG_PATH"] = "/dev/null"
+        print(f"[LAUNCHER] MUTE ACTIVE: Game {info['name']} launching completely silent for testing.")
+        log_host(f"Mute test mode active for {info['name']}")
 
     # 1. Direct Executable launch via game launcher or Wine
     if exe_path and os.path.exists(exe_path):
@@ -153,14 +204,14 @@ def launch_game(game_id: str = "dmc5") -> Optional[subprocess.Popen]:
 
     # 2. Desktop file parser fallback
     if desktop and os.path.exists(desktop):
-        parsed_cmd = parse_desktop_exec(desktop)
+        parsed_cmd, work_dir = parse_desktop_entry(desktop)
         if parsed_cmd:
             print(f"[LAUNCHER] Launching {info['name']} via parsed desktop Exec...")
             log_host(f"Starting {info['name']} via desktop Exec: {' '.join(parsed_cmd)}")
             try:
                 proc = subprocess.Popen(
                     parsed_cmd,
-                    cwd=str(Path.home()),
+                    cwd=work_dir if (work_dir and os.path.exists(work_dir)) else str(Path.home()),
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     start_new_session=True,

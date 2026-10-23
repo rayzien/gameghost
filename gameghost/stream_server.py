@@ -46,7 +46,7 @@ class _XWindowAttributes(Structure):
 
 
 class _XClassHint(Structure):
-    _fields_ = [("res_name", ctypes.c_char_p), ("res_class", ctypes.c_char_p)]
+    _fields_ = [("res_name", ctypes.c_void_p), ("res_class", ctypes.c_void_p)]
 
 
 def _find_target_game_window():
@@ -105,10 +105,10 @@ def _find_target_game_window():
                         res_name, res_class = "", ""
                         if x11.XGetClassHint(disp, wid, byref(hint)):
                             if hint.res_name:
-                                res_name = hint.res_name.decode("utf-8", "replace").lower()
+                                res_name = ctypes.string_at(hint.res_name).decode("utf-8", "replace").lower()
                                 x11.XFree(hint.res_name)
                             if hint.res_class:
-                                res_class = hint.res_class.decode("utf-8", "replace").lower()
+                                res_class = ctypes.string_at(hint.res_class).decode("utf-8", "replace").lower()
                                 x11.XFree(hint.res_class)
 
                         combined = f"{title} {res_name} {res_class}"
@@ -279,15 +279,39 @@ class GameStreamServer:
                     buf = io.BytesIO()
                     img.save(buf, format="JPEG", quality=self.quality, optimize=False)
                     jpeg_bytes = buf.getvalue()
-                except Exception as ex:
-                    try:
-                        sct.close()
-                    except Exception:
-                        pass
-                    sct = None
-                    monitor = None
-                    current_target_win = None
-                    last_init_attempt = t0
+                except Exception:
+                    # If direct window grab failed, recover to primary desktop monitor immediately
+                    if current_target_win is not None:
+                        current_target_win = None
+                        try:
+                            sct.close()
+                        except Exception:
+                            pass
+                        sct, monitor = _try_init_sct()
+                        if sct and monitor:
+                            try:
+                                raw = sct.grab(monitor)
+                                img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
+                                if self.scale != 1.0:
+                                    new_w = max(320, int(img.width * self.scale))
+                                    new_h = max(240, int(img.height * self.scale))
+                                    img = img.resize((new_w, new_h), Image.BILINEAR)
+                                buf = io.BytesIO()
+                                img.save(buf, format="JPEG", quality=self.quality, optimize=False)
+                                jpeg_bytes = buf.getvalue()
+                            except Exception:
+                                sct = None
+                                monitor = None
+                                last_init_attempt = t0
+                    else:
+                        try:
+                            sct.close()
+                        except Exception:
+                            pass
+                        sct = None
+                        monitor = None
+                        current_target_win = None
+                        last_init_attempt = t0
 
             if not jpeg_bytes:
                 jpeg_bytes = self._render_standby_frame(t0)
