@@ -406,3 +406,6 @@ def scan_network_hosts(port: int = 8900, timeout: float = 0.3) -> List[Dict[str,
                 found.append(res)
 
     return found
+
+# Base Cooler Worker Default Config
+COOLER_DEFAULT_CONFIG = {"enabled": True, "target_temp": 78.0, "policy": "balanced"}
