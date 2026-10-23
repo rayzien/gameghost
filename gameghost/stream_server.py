@@ -66,11 +66,24 @@ def _activate_game_window(win_id: int) -> bool:
     """Send _NET_ACTIVE_WINDOW to ensure the game is focused and rendered on the active workspace."""
     try:
         x11 = ctypes.cdll.LoadLibrary("libX11.so.6")
+        x11.XOpenDisplay.restype = ctypes.c_void_p
+        x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+        x11.XDefaultRootWindow.restype = c_ulong
+        x11.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+        x11.XInternAtom.restype = c_ulong
+        x11.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, c_int]
+        x11.XSendEvent.restype = c_int
+        x11.XSendEvent.argtypes = [ctypes.c_void_p, c_ulong, c_int, c_long, ctypes.POINTER(_XClientMessageEvent)]
+        x11.XFlush.restype = c_int
+        x11.XFlush.argtypes = [ctypes.c_void_p]
+        x11.XCloseDisplay.restype = c_int
+        x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+
         disp = x11.XOpenDisplay(None)
         if not disp:
             return False
         root = x11.XDefaultRootWindow(disp)
-        atom_active = x11.XInternAtom(disp, b"_NET_ACTIVE_WINDOW", False)
+        atom_active = x11.XInternAtom(disp, b"_NET_ACTIVE_WINDOW", 0)
         ev = _XClientMessageEvent()
         ev.type = 33  # ClientMessage
         ev.window = win_id
