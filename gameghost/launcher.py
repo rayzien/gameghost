@@ -33,7 +33,7 @@ GAMES_CATALOG: Dict[str, Dict[str, Any]] = {
     "mk11": {
         "id": "mk11",
         "name": "Mortal Kombat 11",
-        "exe": "/media/zero/New Volume1/Mortal Kombat 11/Binaries/Retail/MK11.exe",
+        "exe": "/media/zero/New Volume1/Mortal Kombat 11/Binaries/Retail/MK11_DX12.exe",
         "launcher": "/home/zero/.local/bin/launch-game",
         "desktop": "/home/zero/Desktop/Mortal_Kombat_11.desktop"
     },

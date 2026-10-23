@@ -45,6 +45,10 @@ class _XWindowAttributes(Structure):
     ]
 
 
+class _XClassHint(Structure):
+    _fields_ = [("res_name", ctypes.c_char_p), ("res_class", ctypes.c_char_p)]
+
+
 def _find_target_game_window():
     try:
         x11 = ctypes.cdll.LoadLibrary("libX11.so.6")
@@ -56,6 +60,8 @@ def _find_target_game_window():
         x11.XQueryTree.argtypes = [ctypes.c_void_p, c_ulong, POINTER(c_ulong), POINTER(c_ulong), POINTER(POINTER(c_ulong)), POINTER(c_uint)]
         x11.XFetchName.restype = c_int
         x11.XFetchName.argtypes = [ctypes.c_void_p, c_ulong, POINTER(ctypes.c_char_p)]
+        x11.XGetClassHint.restype = c_int
+        x11.XGetClassHint.argtypes = [ctypes.c_void_p, c_ulong, POINTER(_XClassHint)]
         x11.XGetWindowAttributes.restype = c_int
         x11.XGetWindowAttributes.argtypes = [ctypes.c_void_p, c_ulong, POINTER(_XWindowAttributes)]
         x11.XFree.restype = c_int
@@ -76,22 +82,40 @@ def _find_target_game_window():
         best_w, best_h = 0, 0
 
         if x11.XQueryTree(disp, root, byref(root_ret), byref(parent_ret), byref(children), byref(nchildren)):
-            game_keywords = ["devil may cry", "dmc", "sekiro", "tekken", "mortal kombat", "metal gear", "tomb raider"]
+            game_keywords = [
+                "devil may cry", "dmc", "sekiro", "tekken", "polaris",
+                "mortal kombat", "mk11", "metal gear", "mgr", "tomb raider", "rottr"
+            ]
+            system_exclusions = [
+                "guard window", "desktop", "damx", "conky", "mutter",
+                "explorer.exe", "rainmeter.exe", "winedevice.exe"
+            ]
             for i in range(nchildren.value - 1, -1, -1):
                 wid = children[i]
                 attrs = _XWindowAttributes()
                 if x11.XGetWindowAttributes(disp, wid, byref(attrs)):
-                    if attrs.map_state == 2 and attrs.width >= 640 and attrs.height >= 480:
+                    if attrs.map_state == 2 and attrs.width >= 400 and attrs.height >= 300:
                         name_ptr = ctypes.c_char_p()
                         title = ""
                         if x11.XFetchName(disp, wid, byref(name_ptr)) and name_ptr.value:
                             title = name_ptr.value.decode("utf-8", "replace").lower()
                             x11.XFree(name_ptr)
 
-                        if "guard window" in title or "desktop" in title or "damx" in title or "conky" in title:
+                        hint = _XClassHint()
+                        res_name, res_class = "", ""
+                        if x11.XGetClassHint(disp, wid, byref(hint)):
+                            if hint.res_name:
+                                res_name = hint.res_name.decode("utf-8", "replace").lower()
+                                x11.XFree(hint.res_name)
+                            if hint.res_class:
+                                res_class = hint.res_class.decode("utf-8", "replace").lower()
+                                x11.XFree(hint.res_class)
+
+                        combined = f"{title} {res_name} {res_class}"
+                        if any(ex in combined for ex in system_exclusions):
                             continue
 
-                        if any(k in title for k in game_keywords):
+                        if any(k in combined for k in game_keywords) or (res_name.endswith(".exe") and not any(ex in res_name for ex in system_exclusions)):
                             best_win = wid
                             best_w, best_h = attrs.width, attrs.height
                             break

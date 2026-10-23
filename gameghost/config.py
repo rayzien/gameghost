@@ -185,6 +185,18 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "tekken8": {
             "name": "Tekken 8",
             "desktop": "/home/zero/Desktop/Tekken_8.desktop"
+        },
+        "mk11": {
+            "name": "Mortal Kombat 11",
+            "desktop": "/home/zero/Desktop/Mortal_Kombat_11.desktop"
+        },
+        "mgr": {
+            "name": "Metal Gear Rising: Revengeance",
+            "desktop": "/home/zero/Desktop/Metal_Gear_Rising.desktop"
+        },
+        "rottr": {
+            "name": "Rise of the Tomb Raider",
+            "desktop": "/home/zero/Desktop/ROTTR.desktop"
         }
     }
 }
