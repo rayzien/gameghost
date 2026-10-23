@@ -1,16 +1,35 @@
+import os
+import sys
+import time
+import queue
+import shutil
 import asyncio
 import threading
+import subprocess
 from typing import Set, Optional
 import websockets
 from rich.console import Console
 
+from .config import log_host
+
 console = Console()
+
+
+def _get_capture_command() -> Optional[list]:
+    """Find the best available low-latency system audio capture tool."""
+    if shutil.which("pw-record"):
+        return ["pw-record", "--target", "@DEFAULT_AUDIO_SINK@", "--format", "s16", "--rate", "44100", "--channels", "2", "-"]
+    if shutil.which("parec"):
+        return ["parec", "--format=s16le", "--rate=44100", "--channels=2"]
+    if shutil.which("ffmpeg"):
+        return ["ffmpeg", "-nostdin", "-loglevel", "quiet", "-f", "pulse", "-i", "default", "-f", "s16le", "-ar", "44100", "-ac", "2", "-"]
+    return None
 
 
 class GameAudioServer:
     """
-    Captures PC system game sound (via PulseAudio / PipeWire monitor)
-    and streams raw PCM / audio buffers over WebSocket to the phone.
+    Captures PC system game sound (via PipeWire / PulseAudio monitor)
+    and streams raw PCM audio buffers over WebSocket to the phone.
     """
 
     def __init__(self, host: str = "0.0.0.0", port: int = 8901):
@@ -18,57 +37,104 @@ class GameAudioServer:
         self.port = port
         self.running = False
         self.clients: Set[websockets.WebSocketServerProtocol] = set()
-        self.pipeline = None
-        self.sink = None
-        self._init_audio_pipeline()
+        self.audio_queue = queue.Queue(maxsize=16)
+        self.capture_thread: Optional[threading.Thread] = None
+        self.stop_event = threading.Event()
+        self.proc: Optional[subprocess.Popen] = None
+        self._last_client_time = time.time()
 
-    def _init_audio_pipeline(self):
-        try:
-            import gi
-            gi.require_version("Gst", "1.0")
-            from gi.repository import Gst
-            Gst.init(None)
+    def _start_capture(self):
+        """Start background capture worker if not already running."""
+        if self.capture_thread and self.capture_thread.is_alive():
+            return
 
-            # Record system audio output (monitor of default audio sink)
-            pipeline_str = (
-                "pulsesrc ! audioconvert ! audioresample ! "
-                "audio/x-raw,format=S16LE,rate=44100,channels=2 ! "
-                "appsink name=asink emit-signals=True max-buffers=8 drop=True"
-            )
-            self.pipeline = Gst.parse_launch(pipeline_str)
-            self.sink = self.pipeline.get_by_name("asink")
-            self.pipeline.set_state(Gst.State.PLAYING)
-            console.print("[AUDIO] Initialized system game audio capture (PulseAudio/PipeWire)")
-        except Exception as e:
-            console.print(f"[AUDIO] Audio capture unavailable ({e}) - video & gamepad stream active.")
-            self.pipeline = None
-            self.sink = None
+        cmd = _get_capture_command()
+        if not cmd:
+            console.print("[bold yellow][AUDIO][/bold yellow] No PipeWire / PulseAudio recording tool found.")
+            log_host("Audio capture disabled: no suitable tool (pw-record, parec, ffmpeg) found")
+            return
+
+        self.stop_event.clear()
+
+        def _worker():
+            try:
+                console.print(f"[bold green][AUDIO][/bold green] Starting system audio capture via {cmd[0]}...")
+                log_host(f"Audio capture started using {cmd[0]}")
+                self.proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    bufsize=4096
+                )
+                while not self.stop_event.is_set() and self.proc and self.proc.poll() is None:
+                    data = self.proc.stdout.read(4096)
+                    if not data:
+                        break
+                    # Drop oldest if queue is full to avoid latency drift
+                    if self.audio_queue.full():
+                        try:
+                            self.audio_queue.get_nowait()
+                        except queue.Empty:
+                            pass
+                    self.audio_queue.put_nowait(data)
+            except Exception as ex:
+                log_host(f"Audio capture worker exception: {ex}")
+            finally:
+                if self.proc:
+                    try:
+                        self.proc.terminate()
+                        self.proc.wait(timeout=0.5)
+                    except Exception:
+                        try:
+                            self.proc.kill()
+                        except Exception:
+                            pass
+                    self.proc = None
+                log_host("Audio capture worker stopped")
+
+        self.capture_thread = threading.Thread(target=_worker, daemon=True)
+        self.capture_thread.start()
+
+    def _stop_capture(self):
+        """Stop background capture worker to save host resources."""
+        self.stop_event.set()
+        if self.proc:
+            try:
+                self.proc.terminate()
+            except Exception:
+                pass
+        self.capture_thread = None
 
     async def client_handler(self, websocket):
         self.clients.add(websocket)
+        self._last_client_time = time.time()
+        console.print(f"[bold green][AUDIO][/bold green] Phone client connected for audio stream ({len(self.clients)} active)")
+        log_host(f"Audio client connected (active: {len(self.clients)})")
+        self._start_capture()
         try:
             await websocket.wait_closed()
         finally:
             self.clients.discard(websocket)
+            console.print(f"[bold yellow][AUDIO][/bold yellow] Audio client disconnected ({len(self.clients)} active)")
+            log_host(f"Audio client disconnected (active: {len(self.clients)})")
 
     async def _capture_and_broadcast_loop(self):
         while self.running:
-            if self.clients and self.sink:
+            if self.clients:
+                self._last_client_time = time.time()
                 try:
-                    import gi
-                    gi.require_version("Gst", "1.0")
-                    from gi.repository import Gst
-                    sample = self.sink.emit("pull-sample")
-                    if sample:
-                        buf = sample.get_buffer()
-                        success, map_info = buf.map(Gst.MapFlags.READ)
-                        if success:
-                            audio_bytes = bytes(map_info.data)
-                            buf.unmap(map_info)
-                            if audio_bytes:
-                                websockets.broadcast(self.clients, audio_bytes)
+                    # Drain queue and broadcast newest available chunks
+                    while not self.audio_queue.empty():
+                        chunk = self.audio_queue.get_nowait()
+                        if chunk and self.clients:
+                            websockets.broadcast(self.clients, chunk)
                 except Exception:
                     pass
+            else:
+                # If idle for more than 5 seconds without clients, stop capture
+                if time.time() - self._last_client_time > 5.0 and self.capture_thread:
+                    self._stop_capture()
+
             await asyncio.sleep(0.01)
 
     async def start(self):
@@ -86,12 +152,4 @@ class GameAudioServer:
 
     def stop(self):
         self.running = False
-        if self.pipeline:
-            try:
-                import gi
-                gi.require_version("Gst", "1.0")
-                from gi.repository import Gst
-                self.pipeline.set_state(Gst.State.NULL)
-            except Exception:
-                pass
-            self.pipeline = None
+        self._stop_capture()

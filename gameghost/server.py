@@ -97,4 +97,5 @@ class GameGhostHost:
         clear_host_pid()
         self.discovery.stop()
         self.stream_server.stop()
+        self.audio_server.stop()
         console.print("[INFO] GameGhost Host stopped.")
