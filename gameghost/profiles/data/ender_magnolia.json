@@ -1,0 +1,22 @@
+{
+  "id": "ender_magnolia",
+  "name": "ENDER MAGNOLIA: Bloom in the Mist",
+  "category": "action_rpg",
+  "steam_appid": 2725260,
+  "wine_optimizations": {
+    "esync": true,
+    "fsync": true,
+    "dxvk_async": true,
+    "dll_overrides": "d3d11,dxgi,d3d12,d3d12core=n;dinput8,winmm=n,b",
+    "vkd3d_feature_level": "12_2",
+    "mangohud": 1
+  },
+  "target_resolution": "1080p",
+  "recommended_fps": 60,
+  "deadzone": {
+    "inner": 0.08,
+    "outer": 0.95
+  },
+  "layout": "xbox",
+  "custom_launch_args": []
+}
