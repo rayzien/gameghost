@@ -23,7 +23,7 @@ def get_current_version() -> str:
         from . import __version__
         return __version__
     except Exception:
-        return "1.7.0"
+        return "1.7.1"
 
 
 def get_latest_remote_info(project_dir: Path) -> Tuple[Optional[str], Optional[str]]:

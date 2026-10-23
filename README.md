@@ -1,9 +1,9 @@
-# GameGhost v1.7.0 — Base Cooler Worker
+# GameGhost v1.7.1 — Native Audio Streaming & Playful Settings Hub
 
-> **High-Performance PC Gaming Handheld Cast & Controller Subsystem with Base Cooler Worker**  
+> **High-Performance PC Gaming Handheld Cast & Controller Subsystem**  
 > *Created by rayzien & pheonix14*
 
-GameGhost v1.7.0 introduces the **Base Cooler Worker** system: an autonomous thermal management and dynamic stream throttling governor that prevents hardware overheating during long handheld gaming sessions, accompanied by a comprehensive library of 450 curated game profiles and Protocol v2.
+GameGhost v1.7.1 introduces **Native PipeWire & PulseAudio Low-Latency Audio Streaming** to mobile clients, a sleek and playful **[SETTINGS] Interactive Control Center Modal** (replacing permanent top-bar clutter with a clean handheld view), expanded and hardened game execution for **Mortal Kombat 11**, Tekken 8, DMC5, Sekiro, MGR, and ROTTR, automated test-mute protections, and strict 0-emoji design throughout.
 
 ---
 
