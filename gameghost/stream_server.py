@@ -12,6 +12,7 @@ from rich.console import Console
 
 from .gamepad import VirtualGamepad
 from .launcher import launch_game, list_games
+from .config import load_config, QUALITY_PRESETS
 
 console = Console()
 
@@ -23,10 +24,34 @@ class GameStreamServer:
     and ingests real-time touch gamepad events directly into the virtual controller.
     """
 
-    def __init__(self, host: str = "0.0.0.0", port: int = 8900, fps: int = 60, quality: int = 75, scale: float = 0.85):
+    def __init__(
+        self,
+        host: str = "0.0.0.0",
+        port: int = 8900,
+        fps: int = 60,
+        min_fps: int = 45,
+        max_fps: int = 120,
+        auto_fps: bool = True,
+        quality: int = 80,
+        scale: float = 0.85,
+        preset: str = "1080p"
+    ):
         self.host = host
         self.port = port
+        self.preset = preset
+        if preset in QUALITY_PRESETS:
+            p_cfg = QUALITY_PRESETS[preset]
+            scale = p_cfg.get("scale", scale)
+            quality = p_cfg.get("quality", quality)
+            fps = p_cfg.get("fps", fps)
+            min_fps = p_cfg.get("min_fps", min_fps)
+            max_fps = p_cfg.get("max_fps", max_fps)
+
         self.fps = fps
+        self.target_fps = fps
+        self.min_fps = min_fps
+        self.max_fps = max_fps
+        self.auto_fps = auto_fps
         self.quality = quality
         self.scale = scale
         self.running = False
@@ -93,9 +118,10 @@ class GameStreamServer:
             console.print(f"[STREAM] Display capture unavailable ({ex}). Activating standby game visualizer.")
             use_fallback = True
 
-        target_delay = 1.0 / max(15, min(90, self.fps))
+        target_delay = 1.0 / max(self.min_fps, self.fps)
         frame_count = 0
         last_fps_time = time.time()
+        fps_adjust_interval = 0
 
         while self.running:
             t0 = time.time()
@@ -131,14 +157,28 @@ class GameStreamServer:
                 frame_count = 0
                 last_fps_time = now
 
-            elapsed = time.time() - t0
-            rem = target_delay - elapsed
+            work_time = time.time() - t0
+            target_delay = 1.0 / max(self.min_fps, self.fps)
+            rem = target_delay - work_time
+
+            # Dynamic Auto-FPS adjustment (never drops below min_fps)
+            if self.auto_fps:
+                fps_adjust_interval += 1
+                if fps_adjust_interval >= 10:
+                    fps_adjust_interval = 0
+                    if work_time > target_delay * 0.90:
+                        # Capture is heavy, lower FPS towards min_fps
+                        self.fps = max(self.min_fps, self.fps - 2)
+                    elif work_time < target_delay * 0.65 and self.fps < self.max_fps:
+                        # Plenty of headroom, scale up FPS towards max_fps
+                        self.fps = min(self.max_fps, self.fps + 1)
+
             if rem > 0.001:
                 time.sleep(rem)
 
     async def _broadcast_loop(self):
         """Asynchronously push the latest frame to connected phone clients."""
-        interval = 1.0 / self.fps
+        interval = 1.0 / max(1, self.fps)
         last_sent_seq = 0
 
         while self.running:
@@ -192,20 +232,54 @@ class GameStreamServer:
                             }))
 
                         elif msg_type == "ping":
+                            t_client = data.get("client_time") or data.get("time") or 0
                             await websocket.send(json.dumps({
                                 "type": "pong",
-                                "client_time": data.get("time", 0),
+                                "time": t_client,
+                                "client_time": t_client,
                                 "server_time": time.time() * 1000,
-                                "fps": self.stats["fps"]
+                                "fps": self.stats["fps"],
+                                "target_fps": self.fps,
+                                "quality": self.quality,
+                                "preset": self.preset,
+                                "auto_fps": self.auto_fps,
                             }))
 
                         elif msg_type == "settings":
+                            if "preset" in data:
+                                p_id = str(data["preset"]).lower()
+                                if p_id in QUALITY_PRESETS:
+                                    self.preset = p_id
+                                    p_cfg = QUALITY_PRESETS[p_id]
+                                    self.scale = p_cfg.get("scale", self.scale)
+                                    self.quality = p_cfg.get("quality", self.quality)
+                                    self.fps = p_cfg.get("fps", self.fps)
+                                    self.target_fps = self.fps
+                                    self.min_fps = p_cfg.get("min_fps", self.min_fps)
+                                    self.max_fps = p_cfg.get("max_fps", self.max_fps)
                             if "quality" in data:
-                                self.quality = int(data["quality"])
+                                self.quality = max(30, min(100, int(data["quality"])))
                             if "fps" in data:
-                                self.fps = int(data["fps"])
+                                self.fps = max(30, min(144, int(data["fps"])))
+                                self.target_fps = self.fps
+                            if "min_fps" in data:
+                                self.min_fps = max(24, min(60, int(data["min_fps"])))
+                            if "auto_fps" in data:
+                                self.auto_fps = bool(data["auto_fps"])
+                            if "scale" in data:
+                                self.scale = max(0.4, min(1.0, float(data["scale"])))
                             if "mode" in data:
                                 self.gamepad.mode = data["mode"]
+
+                            await websocket.send(json.dumps({
+                                "type": "settings_ack",
+                                "preset": self.preset,
+                                "fps": self.fps,
+                                "min_fps": self.min_fps,
+                                "quality": self.quality,
+                                "scale": self.scale,
+                                "auto_fps": self.auto_fps,
+                            }))
                     except Exception:
                         pass
         except websockets.exceptions.ConnectionClosed:

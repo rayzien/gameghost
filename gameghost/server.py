@@ -2,6 +2,7 @@ import os
 import sys
 import asyncio
 from pathlib import Path
+from typing import Optional
 from rich.console import Console
 
 from .config import load_config, get_local_ip, save_host_pid, clear_host_pid
@@ -13,7 +14,16 @@ console = Console()
 
 
 class GameGhostHost:
-    def __init__(self, fps: int = 60, quality: int = 80, scale: float = 0.85):
+    def __init__(
+        self,
+        fps: Optional[int] = None,
+        quality: Optional[int] = None,
+        scale: Optional[float] = None,
+        preset: Optional[str] = None,
+        min_fps: Optional[int] = None,
+        max_fps: Optional[int] = None,
+        auto_fps: Optional[bool] = None
+    ):
         self.cfg = load_config()
         self.stream_port = self.cfg.get("stream_port", 8900)
         self.audio_port = self.cfg.get("audio_port", 8901)
@@ -23,8 +33,12 @@ class GameGhostHost:
             host="0.0.0.0",
             port=self.stream_port,
             fps=fps or self.cfg.get("target_fps", 60),
+            min_fps=min_fps or self.cfg.get("min_fps", 45),
+            max_fps=max_fps or self.cfg.get("max_fps", 120),
+            auto_fps=auto_fps if auto_fps is not None else self.cfg.get("auto_fps", True),
             quality=quality or self.cfg.get("screen_quality", 80),
-            scale=scale or self.cfg.get("screen_scale", 0.85)
+            scale=scale or self.cfg.get("screen_scale", 0.85),
+            preset=preset or self.cfg.get("preset", "1080p")
         )
 
         self.audio_server = GameAudioServer(

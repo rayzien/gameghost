@@ -188,7 +188,15 @@ def cmd_host(args):
         except Exception:
             pass
 
-    host = GameGhostHost(fps=args.fps, quality=args.quality, scale=args.scale)
+    host = GameGhostHost(
+        fps=getattr(args, "fps", None),
+        quality=getattr(args, "quality", 80),
+        scale=getattr(args, "scale", 0.85),
+        preset=getattr(args, "preset", None),
+        min_fps=getattr(args, "min_fps", None),
+        max_fps=getattr(args, "max_fps", None),
+        auto_fps=getattr(args, "auto_fps", None),
+    )
     try:
         host.start()
     except KeyboardInterrupt:
@@ -298,7 +306,19 @@ def cmd_client(args):
     console.print("[bold green][CLIENT] Starting GameGhost Native Handheld Client (Landscape)...[/bold green]")
     game_to_launch = getattr(args, "game", None)
     try:
-        run_client(host_ip=args.ip, fullscreen=args.fullscreen, launch_game=game_to_launch)
+        run_client(
+            host_ip=args.ip,
+            fullscreen=args.fullscreen,
+            launch_game=game_to_launch,
+            preset=getattr(args, "preset", None),
+            layout=getattr(args, "layout", None),
+            theme=getattr(args, "theme", None),
+            target_fps=getattr(args, "fps", None),
+            min_fps=getattr(args, "min_fps", None),
+            max_fps=getattr(args, "max_fps", None),
+            auto_fps=getattr(args, "auto_fps", None),
+            visibility=getattr(args, "visibility", None),
+        )
     except KeyboardInterrupt:
         console.print("\n[yellow][CLIENT] GameGhost handheld client closed.[/yellow]")
 
@@ -483,9 +503,13 @@ def main():
 
     # host command
     p_host = subparsers.add_parser("host", help="Start the streaming & gamepad host server")
-    p_host.add_argument("--fps", type=int, default=60, help="Target streaming FPS (default: 60)")
+    p_host.add_argument("--fps", type=int, default=None, help="Target streaming FPS (default: from preset or 60)")
     p_host.add_argument("--quality", type=int, default=80, help="JPEG quality 1-100 (default: 80)")
     p_host.add_argument("--scale", type=float, default=0.85, help="Resolution scale factor (default: 0.85)")
+    p_host.add_argument("--preset", type=str, default=None, choices=["720p", "1080p", "1440p", "4k"], help="Quality preset (overrides --fps/--scale)")
+    p_host.add_argument("--min-fps", type=int, default=None, help="Minimum FPS floor for auto-FPS (default: 24)")
+    p_host.add_argument("--max-fps", type=int, default=None, help="Maximum FPS ceiling for auto-FPS (default: 120)")
+    p_host.add_argument("--auto-fps", action="store_true", default=None, help="Enable auto-FPS adjustment (never drops below --min-fps)")
     p_host.add_argument("--background", "-d", action="store_true", help="Run server in background daemon mode")
 
     # start command
@@ -509,6 +533,14 @@ def main():
     p_client.add_argument("ip", type=str, nargs="?", default=None, help="Host PC IP address (auto-discovered if omitted)")
     p_client.add_argument("--fullscreen", "-f", action="store_true", default=True, help="Launch in fullscreen mode")
     p_client.add_argument("--game", "-g", type=str, default=None, help="Game to auto-launch on connect")
+    p_client.add_argument("--preset", type=str, default=None, choices=["720p", "1080p", "1440p", "4k"], help="Quality preset (720p/1080p/1440p/4k)")
+    p_client.add_argument("--layout", type=str, default=None, choices=["xbox", "playstation"], help="Controller layout theme (xbox or playstation)")
+    p_client.add_argument("--theme", type=str, default=None, choices=["cyan", "xbox", "playstation", "red", "dark"], help="Neon overlay theme")
+    p_client.add_argument("--fps", type=int, default=None, help="Override target FPS")
+    p_client.add_argument("--min-fps", type=int, default=None, help="Minimum FPS floor (auto-FPS never drops below this)")
+    p_client.add_argument("--max-fps", type=int, default=None, help="Maximum FPS ceiling for auto-FPS")
+    p_client.add_argument("--auto-fps", action="store_true", default=None, help="Enable dynamic auto-FPS adjustment")
+    p_client.add_argument("--visibility", type=str, default=None, choices=["full", "minimal", "hidden", "off"], help="Overlay visibility mode")
 
     # scan command
     subparsers.add_parser("scan", help="Scan network for GameGhost PC hosts")

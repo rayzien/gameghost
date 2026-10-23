@@ -13,14 +13,110 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 LAST_HOST_FILE = CONFIG_DIR / "last_host.txt"
 PID_FILE = CONFIG_DIR / "host.pid"
 
+QUALITY_PRESETS: Dict[str, Dict[str, Any]] = {
+    "720p": {
+        "id": "720p",
+        "name": "720p Fast (Performance)",
+        "scale": 0.67,
+        "quality": 70,
+        "fps": 60,
+        "min_fps": 45,
+        "max_fps": 60,
+    },
+    "1080p": {
+        "id": "1080p",
+        "name": "1080p FHD (Balanced / Standard)",
+        "scale": 0.85,
+        "quality": 80,
+        "fps": 60,
+        "min_fps": 50,
+        "max_fps": 90,
+    },
+    "1440p": {
+        "id": "1440p",
+        "name": "1440p 2K (Ultra HD)",
+        "scale": 1.0,
+        "quality": 88,
+        "fps": 90,
+        "min_fps": 60,
+        "max_fps": 120,
+    },
+    "4k": {
+        "id": "4k",
+        "name": "2160p 4K (Extreme Cinema)",
+        "scale": 1.0,
+        "quality": 95,
+        "fps": 120,
+        "min_fps": 60,
+        "max_fps": 144,
+    },
+}
+
+THEME_PRESETS: Dict[str, Dict[str, Any]] = {
+    "cyan": {
+        "id": "cyan",
+        "name": "Cyber Cyan",
+        "border": (0, 210, 255),
+        "accent": (0, 230, 255),
+        "hud": (0, 230, 255),
+        "stick_base": (30, 45, 65, 130),
+        "stick_knob": (0, 210, 255, 190),
+    },
+    "xbox": {
+        "id": "xbox",
+        "name": "Xbox Green",
+        "border": (16, 124, 65),
+        "accent": (46, 204, 113),
+        "hud": (46, 204, 113),
+        "stick_base": (25, 45, 30, 130),
+        "stick_knob": (46, 204, 113, 190),
+    },
+    "playstation": {
+        "id": "playstation",
+        "name": "PlayStation Blue",
+        "border": (0, 106, 255),
+        "accent": (52, 152, 219),
+        "hud": (52, 152, 219),
+        "stick_base": (20, 35, 65, 130),
+        "stick_knob": (0, 140, 255, 190),
+    },
+    "red": {
+        "id": "red",
+        "name": "DMC Blood Red",
+        "border": (255, 46, 99),
+        "accent": (231, 76, 60),
+        "hud": (255, 80, 110),
+        "stick_base": (55, 20, 25, 130),
+        "stick_knob": (255, 46, 99, 190),
+    },
+    "dark": {
+        "id": "dark",
+        "name": "Stealth Dark",
+        "border": (100, 110, 125),
+        "accent": (180, 190, 205),
+        "hud": (200, 210, 220),
+        "stick_base": (20, 22, 28, 110),
+        "stick_knob": (140, 150, 165, 170),
+    },
+}
+
 DEFAULT_CONFIG: Dict[str, Any] = {
     "node_name": "GameGhost-Host",
     "stream_port": 8900,
     "audio_port": 8901,
     "discovery_port": 8990,
+    "preset": "1080p",
     "target_fps": 60,
+    "min_fps": 45,
+    "max_fps": 120,
+    "auto_fps": True,
     "screen_quality": 80,
     "screen_scale": 0.85,
+    "controller_theme": "xbox",  # 'xbox' or 'playstation'
+    "overlay_theme": "cyan",     # 'cyan', 'xbox', 'playstation', 'red', 'dark'
+    "overlay_visibility": "full", # 'full', 'minimal', 'hidden'
+    "overlay_opacity": 0.65,
+    "border_glow": True,
     "last_host_ip": "",
     "controller_mode": "gamepad",
     "games": {

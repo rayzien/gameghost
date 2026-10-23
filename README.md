@@ -13,11 +13,14 @@
 ```
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Version: 1.4.1](https://img.shields.io/badge/Version-1.4.1-brightgreen.svg)](https://github.com/rayzien/gameghost/releases)
+[![Version: 1.5.0](https://img.shields.io/badge/Version-1.5.0-brightgreen.svg)](https://github.com/rayzien/gameghost/releases)
 [![Python: 3.10+](https://img.shields.io/badge/Python-3.10+-brightgreen.svg)](https://www.python.org/)
 [![Platform: Linux](https://img.shields.io/badge/Platform-Linux-orange.svg)](https://kernel.org)
 [![Client: Termux / Native SDL2](https://img.shields.io/badge/Client-Termux%20%7C%20Native%20SDL2-purple.svg)](https://termux.dev)
 [![Virtual Gamepad: uinput Xbox 360](https://img.shields.io/badge/Gamepad-uinput%20Xbox%20360-success.svg)](https://www.kernel.org/doc/html/latest/input/uinput.html)
+[![Layout: PS / Xbox](https://img.shields.io/badge/Layout-PS%20%7C%20Xbox-blue.svg)](https://github.com/rayzien/gameghost)
+[![Quality: 720p to 4K](https://img.shields.io/badge/Quality-720p%20to%204K-yellow.svg)](https://github.com/rayzien/gameghost)
+[![Auto FPS: Dynamic](https://img.shields.io/badge/Auto--FPS-Dynamic-cyan.svg)](https://github.com/rayzien/gameghost)
 [![Controllers: Touch + Physical Gamepads](https://img.shields.io/badge/Hardware-Bluetooth%20%2F%20USB%20OTG%20Gamepads-teal.svg)](https://github.com/rayzien/gameghost)
 [![Orientation: Forced Landscape](https://img.shields.io/badge/Display-Forced%20Landscape-blueviolet.svg)](https://github.com/rayzien/gameghost)
 
