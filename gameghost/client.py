@@ -1015,7 +1015,10 @@ class GameGhostViewer:
         surface.blit(title_lbl, (cx - title_lbl.get_width() // 2, cy - 120))
 
         dots = "." * (int(time.time() * 2) % 4)
-        status_str = f"LOOKING FOR INPUTS FROM PC (ws://{self.host_ip}:{self.port}){dots}"
+        if self.launch_game:
+            status_str = f"CONNECTING TO PC HOST TO CAST {self.launch_game.upper()} (ws://{self.host_ip}:{self.port}){dots}"
+        else:
+            status_str = f"LOOKING FOR INPUTS FROM PC (ws://{self.host_ip}:{self.port}){dots}"
         status_lbl = font.render(status_str, True, (255, 195, 0))
         surface.blit(status_lbl, (cx - status_lbl.get_width() // 2, cy + 25))
 
@@ -1470,6 +1473,28 @@ class GameGhostViewer:
                     screen.blit(cached_scaled_surface, (off_x, off_y))
                 else:
                     screen.blit(current_game_surface, (off_x, off_y))
+
+                # Check if received PC screen is black (e.g. while game / DirectX window is loading on PC)
+                try:
+                    cw, ch = current_game_surface.get_width(), current_game_surface.get_height()
+                    if cw > 20 and ch > 20:
+                        p1 = current_game_surface.get_at((cw // 2, ch // 2))[:3]
+                        p2 = current_game_surface.get_at((20, 20))[:3]
+                        p3 = current_game_surface.get_at((cw - 20, 20))[:3]
+                        p4 = current_game_surface.get_at((cw // 4, ch // 4))[:3]
+                        if p1 == (0, 0, 0) and p2 == (0, 0, 0) and p3 == (0, 0, 0) and p4 == (0, 0, 0):
+                            theme_cfg = THEME_PRESETS.get(self.overlay_theme, THEME_PRESETS["cyan"])
+                            accent = theme_cfg["accent"]
+                            gname = (self.launch_game or "GAME").upper()
+                            dots = "." * (int(time.time() * 2) % 4)
+                            load_title = big_font.render(f"STARTING {gname} ON PC{dots}", True, accent)
+                            screen.blit(load_title, (self.win_w // 2 - load_title.get_width() // 2, self.win_h // 2 - 40))
+                            load_sub = font.render("Connected to PC. Waiting for DirectX / Vulkan game window to render...", True, (255, 200, 50))
+                            screen.blit(load_sub, (self.win_w // 2 - load_sub.get_width() // 2, self.win_h // 2 + 5))
+                            load_hint = font.render(f"PC Host: ws://{self.host_ip}:{self.port} | Tap [SETTINGS] or press 'm' for options", True, (160, 180, 200))
+                            screen.blit(load_hint, (self.win_w // 2 - load_hint.get_width() // 2, self.win_h // 2 + 35))
+                except Exception:
+                    pass
             else:
                 self._draw_standby_screen(screen, font, big_font)
 

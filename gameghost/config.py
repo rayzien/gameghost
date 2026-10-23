@@ -231,7 +231,8 @@ def get_last_host() -> Optional[str]:
     try:
         if LAST_HOST_FILE.exists():
             ip = LAST_HOST_FILE.read_text().strip()
-            if ip:
+            local_ip = get_local_ip()
+            if ip and ip not in ("127.0.0.1", "localhost", "0.0.0.0", local_ip):
                 return ip
     except Exception:
         pass
@@ -241,8 +242,12 @@ def get_last_host() -> Optional[str]:
 def save_last_host(ip: str):
     """Save the connected PC host IP for quick reconnects."""
     try:
+        clean_ip = ip.strip()
+        local_ip = get_local_ip()
+        if clean_ip in ("127.0.0.1", "localhost", "0.0.0.0", local_ip):
+            return
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        LAST_HOST_FILE.write_text(ip.strip())
+        LAST_HOST_FILE.write_text(clean_ip)
     except Exception:
         pass
 

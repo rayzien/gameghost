@@ -60,8 +60,29 @@ if [ -n "$TERMUX_VERSION" ] || [ -d "/data/data/com.termux/files" ]; then
     export MESA_DEBUG="silent"
     export EGL_LOG_LEVEL="fatal"
 
-    # Bring Termux-X11 companion app to foreground if launching client/game
-    if [ "$1" = "client" ] || [ "$1" = "dmc5" ] || [ "$1" = "sekiro" ] || [ "$1" = "tekken8" ] || [ "$1" = "mk11" ] || [ "$1" = "mgr" ] || [ "$1" = "rottr" ] || [ -z "$1" ]; then
+    IS_GUI=1
+    case "$1" in
+        host|start|stop|restart|service|status|scan|find|list|logs|autostart|update|gamepad)
+            IS_GUI=0
+            ;;
+    esac
+
+    if [ "$IS_GUI" = "1" ]; then
+        # Ensure Termux-X11 server daemon is active with -legacy-drawing
+        if ! pgrep -f "termux-x11" >/dev/null 2>&1; then
+            echo "[INFO] Starting Termux-X11 display server (:0) with -legacy-drawing..."
+            nohup termux-x11 :0 -legacy-drawing -ac >/dev/null 2>&1 &
+            for _ in 1 2 3 4 5 6 7 8; do
+                if pgrep -f "termux-x11" >/dev/null 2>&1; then
+                    break
+                fi
+                sleep 0.2
+            done
+            sleep 0.3
+        fi
+        export DISPLAY="${DISPLAY:-:0}"
+
+        # Bring Termux-X11 companion app to foreground
         if command -v am >/dev/null 2>&1; then
             am start --user 0 -n com.termux.x11/com.termux.x11.MainActivity >/dev/null 2>&1 || \
             am start -n com.termux.x11/com.termux.x11.MainActivity >/dev/null 2>&1 || true

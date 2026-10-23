@@ -23,7 +23,7 @@ def get_current_version() -> str:
         from . import __version__
         return __version__
     except Exception:
-        return "1.7.3"
+        return "1.7.4"
 
 
 def get_latest_remote_info(project_dir: Path) -> Tuple[Optional[str], Optional[str]]:
@@ -121,27 +121,29 @@ def run_full_update(force: bool = False, check_only: bool = False) -> bool:
 
         console.print("[OK] Git codebase updated.")
 
-        # Update environment dependencies
-        console.print("[UPDATE] Verifying Python environment packages...")
-        deps = ["websockets", "rich", "pillow", "mss"]
-        venv_python = project_dir / ".venv" / "bin" / "python"
-        shared_venv_python = Path("/home/zero/Desktop/cpughost/.venv/bin/python")
+        # Update environment dependencies (Skip pip compiling on Android/Termux)
+        is_termux = os.path.exists("/data/data/com.termux") or "TERMUX_VERSION" in os.environ
+        if not is_termux:
+            console.print("[UPDATE] Verifying Python environment packages...")
+            deps = ["websockets", "rich", "pillow", "mss"]
+            venv_python = project_dir / ".venv" / "bin" / "python"
+            shared_venv_python = Path("/home/zero/Desktop/cpughost/.venv/bin/python")
 
-        target_python = None
-        if venv_python.exists():
-            target_python = venv_python
-        elif shared_venv_python.exists():
-            target_python = shared_venv_python
+            target_python = None
+            if venv_python.exists():
+                target_python = venv_python
+            elif shared_venv_python.exists():
+                target_python = shared_venv_python
 
-        if target_python and shutil.which("uv"):
-            subprocess.run(["uv", "pip", "install", "--python", str(target_python)] + deps, capture_output=True)
-        elif target_python:
-            pip_bin = target_python.parent / "pip"
-            if pip_bin.exists():
-                subprocess.run([str(pip_bin), "install", "-q"] + deps, capture_output=True)
-        else:
-            if shutil.which("pip"):
-                subprocess.run(["pip", "install", "-q"] + deps, capture_output=True)
+            if target_python and shutil.which("uv"):
+                subprocess.run(["uv", "pip", "install", "--python", str(target_python)] + deps, capture_output=True)
+            elif target_python:
+                pip_bin = target_python.parent / "pip"
+                if pip_bin.exists():
+                    subprocess.run([str(pip_bin), "install", "-q"] + deps, capture_output=True)
+            else:
+                if shutil.which("pip"):
+                    subprocess.run(["pip", "install", "-q"] + deps, capture_output=True)
 
         # Relink launcher executable
         bin_source = project_dir / "bin" / "gameghost"
@@ -174,15 +176,29 @@ def run_full_update(force: bool = False, check_only: bool = False) -> bool:
 
 def check_and_apply_auto_update(silent: bool = True):
     """
-    Check GitHub for updates automatically.
+    Check GitHub for updates automatically (throttled to once every 2 hours).
     Applies updates if a newer commit is found on main.
     """
     project_dir = Path(__file__).resolve().parent.parent
     if not (project_dir / ".git").exists():
         return
+
+    # Throttle automatic background update checks to prevent delaying game launches
+    stamp_file = Path.home() / ".config" / "gameghost" / ".last_update_check"
     try:
+        now = time.time()
+        if stamp_file.exists():
+            last_checked = float(stamp_file.read_text().strip())
+            if now - last_checked < 7200:  # 2 hours
+                return
+    except Exception:
+        pass
+
+    try:
+        stamp_file.parent.mkdir(parents=True, exist_ok=True)
+        stamp_file.write_text(str(time.time()))
         subprocess.run(
-            ["timeout", "3", "git", "fetch", "-q", "origin", "main"],
+            ["timeout", "2", "git", "fetch", "-q", "origin", "main"],
             cwd=str(project_dir),
             capture_output=True
         )
