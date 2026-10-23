@@ -88,17 +88,13 @@ def _find_target_game_window():
                             title = name_ptr.value.decode("utf-8", "replace").lower()
                             x11.XFree(name_ptr)
 
-                        if "guard window" in title or "desktop" in title:
+                        if "guard window" in title or "desktop" in title or "damx" in title or "conky" in title:
                             continue
 
                         if any(k in title for k in game_keywords):
                             best_win = wid
                             best_w, best_h = attrs.width, attrs.height
                             break
-
-                        if not best_win:
-                            best_win = wid
-                            best_w, best_h = attrs.width, attrs.height
 
             if children:
                 x11.XFree(children)
@@ -237,8 +233,15 @@ class GameStreamServer:
                         sct._impl.root.value = twin
                         monitor = {"left": 0, "top": 0, "width": tw, "height": th}
                         console.print(f"[bold green][STREAM] Direct capture attached to game window {hex(twin)} ({tw}x{th})[/bold green]")
+                elif not twin and current_target_win is not None:
+                    current_target_win = None
+                    try:
+                        sct.close()
+                    except Exception:
+                        pass
+                    sct, monitor = _try_init_sct()
 
-            if sct and monitor:
+            if sct and monitor and current_target_win:
                 try:
                     raw = sct.grab(monitor)
                     img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
