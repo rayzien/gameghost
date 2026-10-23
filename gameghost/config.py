@@ -13,7 +13,59 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 LAST_HOST_FILE = CONFIG_DIR / "last_host.txt"
 PID_FILE = CONFIG_DIR / "host.pid"
 
+HOST_LOG_FILE = CONFIG_DIR / "host.log"
+CLIENT_LOG_FILE = CONFIG_DIR / "client.log"
+
+def log_host(msg: str) -> None:
+    """Append timestamped message to host.log."""
+    try:
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        ts = time.strftime("%Y-%m-%d %H:%M:%S")
+        with open(HOST_LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(f"[{ts}] {msg}\n")
+    except Exception:
+        pass
+
+def log_client(msg: str) -> None:
+    """Append timestamped message to client.log."""
+    try:
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        ts = time.strftime("%Y-%m-%d %H:%M:%S")
+        with open(CLIENT_LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(f"[{ts}] {msg}\n")
+    except Exception:
+        pass
+
+def wait_for_hotspot_ip(timeout: float = 30.0) -> str:
+    """Wait on system startup for hotspot/LAN IP before announcing host."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        ip = get_local_ip()
+        if ip and not ip.startswith("127.") and not ip.startswith("169.254."):
+            return ip
+        time.sleep(1.0)
+    return get_local_ip()
+
+
 QUALITY_PRESETS: Dict[str, Dict[str, Any]] = {
+    "360p": {
+        "id": "360p",
+        "name": "360p Super Low Data (Cellular Hotspot)",
+        "scale": 0.45,
+        "quality": 50,
+        "fps": 30,
+        "min_fps": 24,
+        "max_fps": 30,
+    },
+    "480p": {
+        "id": "480p",
+        "name": "480p Low Bandwidth (Efficient)",
+        "scale": 0.55,
+        "quality": 60,
+        "fps": 45,
+        "min_fps": 30,
+        "max_fps": 60,
+    },
     "720p": {
         "id": "720p",
         "name": "720p Fast (Performance)",
