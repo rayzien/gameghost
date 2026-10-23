@@ -114,6 +114,74 @@ class VirtualGamepad:
                     dx, dy = 0, 0
                 self._handle_dpad(dx, dy)
 
+            elif p_type == "mouse_move":
+                dx = float(data.get("dx", 0.0))
+                dy = float(data.get("dy", 0.0))
+                if self.mouse:
+                    self.mouse.move(dx, dy)
+
+            elif p_type == "mouse_btn":
+                btn_str = str(data.get("btn", "left")).lower()
+                val = 1 if data.get("val") else 0
+                if self.mouse:
+                    b_obj = Button.left
+                    if btn_str == "right":
+                        b_obj = Button.right
+                    elif btn_str == "middle":
+                        b_obj = Button.middle
+                    if val == 1:
+                        self.mouse.press(b_obj)
+                    else:
+                        self.mouse.release(b_obj)
+
+            elif p_type == "mouse_scroll":
+                dx = int(data.get("dx", 0))
+                dy = int(data.get("dy", 0))
+                if self.mouse:
+                    self.mouse.scroll(dx, dy)
+
+            elif p_type == "key":
+                kname = str(data.get("name", "")).lower()
+                val = 1 if data.get("val") else 0
+                self._handle_raw_key(kname, val)
+
+    def _handle_raw_key(self, kname: str, val: int):
+        if not self.keyboard:
+            return
+        key_map = {
+            "space": Key.space,
+            "return": Key.enter,
+            "enter": Key.enter,
+            "tab": Key.tab,
+            "escape": Key.esc,
+            "esc": Key.esc,
+            "backspace": Key.backspace,
+            "shift": Key.shift,
+            "shift_r": Key.shift_r,
+            "ctrl": Key.ctrl,
+            "ctrl_r": Key.ctrl_r,
+            "alt": Key.alt,
+            "alt_r": Key.alt_r,
+            "up": Key.up,
+            "down": Key.down,
+            "left": Key.left,
+            "right": Key.right,
+            "f1": Key.f1, "f2": Key.f2, "f3": Key.f3, "f4": Key.f4,
+            "f5": Key.f5, "f6": Key.f6, "f7": Key.f7, "f8": Key.f8,
+            "f9": Key.f9, "f10": Key.f10, "f11": Key.f11, "f12": Key.f12
+        }
+        target_k = key_map.get(kname)
+        if target_k is None and len(kname) == 1:
+            target_k = kname
+        if target_k is not None:
+            try:
+                if val == 1:
+                    self.keyboard.press(target_k)
+                else:
+                    self.keyboard.release(target_k)
+            except Exception:
+                pass
+
     def _handle_button(self, name: str, val: int):
         if self.mode == "gamepad" and self.uinput:
             btn_map = {

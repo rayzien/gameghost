@@ -1,9 +1,9 @@
-# GameGhost v1.7.1 — Native Audio Streaming & Playful Settings Hub
+# GameGhost v1.7.2 — Multi-Controller, Mouse & Keyboard, Touch Customization & Feedback Hub
 
-> **High-Performance PC Gaming Handheld Cast & Controller Subsystem**  
+> **High-Performance PC Gaming Handheld Cast & Universal Controller Subsystem**  
 > *Created by rayzien & pheonix14*
 
-GameGhost v1.7.1 introduces **Native PipeWire & PulseAudio Low-Latency Audio Streaming** to mobile clients, a sleek and playful **[SETTINGS] Interactive Control Center Modal** (replacing permanent top-bar clutter with a clean handheld view), expanded and hardened game execution for **Mortal Kombat 11**, Tekken 8, DMC5, Sekiro, MGR, and ROTTR, automated test-mute protections, and strict 0-emoji design throughout.
+GameGhost v1.7.2 introduces comprehensive **Physical Controller Support** (Xbox, PlayStation, Nintendo Switch profiles with auto-detection, deadzones, trigger normalization), full **Mouse & Keyboard Forwarding** (relative motion capture, click injection, scroll wheel, full keyboard passthrough with F10 lock), interactive **On-Screen Touch Customization** (Scale 75%-150%, Opacity 30%-100%, Styles: Classic, Compact, Wide), **Visual Feedback Animations** (touch ripples and active button depression/glow), **Aspect Ratio Scaling Modes** (Auto, Stretch, 16:9, 21:9, 4:3), and verified stability for **Tekken 8** and **Mortal Kombat 11** under safe sink-level muting. Strict 0-emoji design across the entire codebase.
 
 ---
 
@@ -13,6 +13,36 @@ GameGhost v1.7.1 introduces **Native PipeWire & PulseAudio Low-Latency Audio Str
 > *Created by rayzien & pheonix14*
 
 GameGhost casts your PC games directly to your mobile phone (running Android Termux with Termux-X11) at ultra-low latency, with an interactive on-screen handheld controller (supporting Xbox and PlayStation layout profiles, clickable L3/R3 thumbsticks, dual triggers, and customizable neon themes).
+
+---
+
+## What is New in v1.7.2
+
+1. **Comprehensive Physical Controller Support**:
+   - Multi-brand controller detection: Xbox, PlayStation (DualShock / DualSense), and Nintendo Switch (Pro Controller / Joy-Con).
+   - Dynamic profile auto-detection with button remapping and trigger normalization (-1.0..1.0 to 0.0..1.0).
+   - Radial analog stick deadzones (0.08) to eliminate stick drift.
+
+2. **Full Mouse & Keyboard Forwarding**:
+   - Hardware cursor lock toggle via `F10` hotkey or interactive Settings button.
+   - Smooth relative mouse motion capture and forwarding (`mouse_move`).
+   - Mouse click injection (`mouse_btn`: left, right, middle) and scroll wheel (`mouse_scroll`).
+   - Full keyboard event forwarding for precision PC controls.
+
+3. **Interactive On-Screen Touch Controls Customization**:
+   - **Touch Scale**: Cycle 75%, 100%, 125%, 150% for optimal fingertip ergonomics.
+   - **Touch Opacity**: Cycle 30%, 50%, 75%, 100% alpha for unobscured gameplay visibility.
+   - **Layout Styles**: Choose between Classic, Compact (tucked towards edges), and Wide (tablet landscape grip).
+
+4. **Visual Feedback Animations & Styling**:
+   - Dynamic expanding touch ripple animations upon finger contact.
+   - Active button depression (physical press feedback) and glowing neon aura upon actuation.
+   - Aspect Ratio Scaling: Choose between `Auto` (letterboxed native), `Stretch` (full display), `16:9`, `21:9`, and `4:3`.
+
+5. **Stability & Launch Optimizations**:
+   - **Tekken 8**: Verified 4-minute continuous stability with Unreal Engine 5 shader optimizations.
+   - **Mortal Kombat 11**: Verified stable launch under DX12 with driver application workarounds and safe hardware sink-level test muting (`wpctl`).
+   - Zero-emoji standard enforced across all user interfaces, logs, HUDs, and documentation.
 
 ---
 

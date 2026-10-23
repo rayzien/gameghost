@@ -39,18 +39,16 @@ fi
 export PYGAME_HIDE_SUPPORT_PROMPT="1"
 export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH}"
 
-# Mesa, EGL, DRI2 & Zink error suppression
-export LIBGL_ALWAYS_SOFTWARE="1"
-export GALLIUM_DRIVER="llvmpipe"
-export MESA_LOADER_DRIVER_OVERRIDE="llvmpipe"
-export SDL_RENDER_DRIVER="software"
-export SDL_VIDEO_X11_NODIRECTCOLOR="1"
-export SDL_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR="0"
-export MESA_DEBUG="silent"
-export EGL_LOG_LEVEL="fatal"
-
-# In Termux/Android, use system python3 directly
+# In Termux/Android, use system python3 directly with software fallback if needed
 if [ -n "$TERMUX_VERSION" ] || [ -d "/data/data/com.termux/files" ]; then
+    export LIBGL_ALWAYS_SOFTWARE="1"
+    export GALLIUM_DRIVER="llvmpipe"
+    export MESA_LOADER_DRIVER_OVERRIDE="llvmpipe"
+    export SDL_RENDER_DRIVER="software"
+    export SDL_VIDEO_X11_NODIRECTCOLOR="1"
+    export SDL_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR="0"
+    export MESA_DEBUG="silent"
+    export EGL_LOG_LEVEL="fatal"
     exec python3 -m gameghost.cli "$@"
 fi
 

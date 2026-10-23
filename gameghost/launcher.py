@@ -169,10 +169,11 @@ def launch_game(game_id: str = "dmc5", mute: bool = False) -> Optional[subproces
     # Mute audio during testing to prevent disturbing user
     mute_mode = mute or os.environ.get("GAMEGHOST_MUTE_TEST") == "1"
     if mute_mode:
-        env["WINEDLLOVERRIDES"] = "winepulse.drv=d;winealsa=d;" + env.get("WINEDLLOVERRIDES", "")
-        env["PULSE_SERVER"] = "/dev/null"
-        env["ALSA_CONFIG_PATH"] = "/dev/null"
-        print(f"[LAUNCHER] MUTE ACTIVE: Game {info['name']} launching completely silent for testing.")
+        try:
+            subprocess.run(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "1"], check=False)
+        except Exception:
+            pass
+        print(f"[LAUNCHER] MUTE ACTIVE: System audio sink muted completely for testing {info['name']}.")
         log_host(f"Mute test mode active for {info['name']}")
 
     # 1. Direct Executable launch via game launcher or Wine

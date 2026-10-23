@@ -45,20 +45,35 @@ from .discovery import GameDiscovery, scan_hotspot_subnet
 
 console = Console()
 
-# Hardware Gamepad standard button mapping (Xbox 360 / Generic SDL2 layout)
-JOY_BTN_MAP = {
-    0: "A",
-    1: "B",
-    2: "X",
-    3: "Y",
-    4: "LB",
-    5: "RB",
-    6: "SELECT",
-    7: "START",
-    8: "HOME",
-    9: "L3",
-    10: "R3",
+# Hardware Gamepad Profiles (Xbox, PlayStation, Nintendo, Generic SDL2)
+GAMEPAD_PROFILES = {
+    "xbox": {
+        0: "A", 1: "B", 2: "X", 3: "Y",
+        4: "LB", 5: "RB", 6: "SELECT", 7: "START", 8: "HOME",
+        9: "L3", 10: "R3"
+    },
+    "playstation": {
+        0: "A", 1: "B", 2: "X", 3: "Y",
+        4: "SELECT", 5: "HOME", 6: "START",
+        7: "L3", 8: "R3", 9: "LB", 10: "RB"
+    },
+    "nintendo": {
+        0: "B", 1: "A", 2: "Y", 3: "X",
+        4: "SELECT", 6: "START", 9: "LB", 10: "RB",
+        11: "L3", 12: "R3", 15: "HOME"
+    }
 }
+
+
+def detect_controller_profile(name: str) -> str:
+    """Identify controller brand/profile from device name."""
+    n = name.lower()
+    if any(k in n for k in ("sony", "dualsense", "dualshock", "ps4", "ps5", "playstation")):
+        return "playstation"
+    if any(k in n for k in ("nintendo", "switch", "pro controller", "joy-con")):
+        return "nintendo"
+    return "xbox"
+
 
 # Physical Keyboard mapping fallback (DMC5 / Action RPG control scheme)
 KEY_BTN_MAP = {
@@ -109,13 +124,30 @@ def safe_set_mode(size: Tuple[int, int], flags: int) -> pygame.Surface:
                 pass
 
 
-def calculate_letterbox(win_w: int, win_h: int, frame_w: int, frame_h: int) -> Tuple[int, int, int, int]:
-    """Calculate scaled dimensions preserving aspect ratio."""
-    if frame_w <= 0 or frame_h <= 0:
+def calculate_letterbox(win_w: int, win_h: int, frame_w: int, frame_h: int, aspect_mode: str = "auto") -> Tuple[int, int, int, int]:
+    """Calculate scaled dimensions based on user-chosen aspect ratio mode."""
+    if frame_w <= 0 or frame_h <= 0 or win_w <= 0 or win_h <= 0:
         return win_w, win_h, 0, 0
-    scale = min(win_w / frame_w, win_h / frame_h)
-    draw_w = max(1, int(frame_w * scale))
-    draw_h = max(1, int(frame_h * scale))
+
+    if aspect_mode == "stretch":
+        return win_w, win_h, 0, 0
+
+    target_ratio = frame_w / frame_h
+    if aspect_mode == "16:9":
+        target_ratio = 16.0 / 9.0
+    elif aspect_mode == "21:9":
+        target_ratio = 21.0 / 9.0
+    elif aspect_mode == "4:3":
+        target_ratio = 4.0 / 3.0
+
+    screen_ratio = win_w / win_h
+    if screen_ratio > target_ratio:
+        draw_h = win_h
+        draw_w = max(1, int(win_h * target_ratio))
+    else:
+        draw_w = win_w
+        draw_h = max(1, int(win_w / target_ratio))
+
     offset_x = (win_w - draw_w) // 2
     offset_y = (win_h - draw_h) // 2
     return draw_w, draw_h, offset_x, offset_y
@@ -185,9 +217,19 @@ class GameGhostViewer:
 
         # Physical Joysticks / Hardware Controllers (Bluetooth, USB OTG, Kishi, Backbone)
         self.joysticks: Dict[int, pygame.joystick.Joystick] = {}
+        self.joystick_profiles: Dict[int, str] = {}
 
         # Multi-touch tracking: finger_id -> {"target": "left_stick|right_stick|button", "data": ...}
         self.active_touches: Dict[int, Dict[str, Any]] = {}
+        self.pressed_buttons: Set[str] = set()
+        self.ripples: List[Dict[str, Any]] = []
+
+        # Touch Controls Customization, Aspect Ratio & Mouse Support
+        self.touch_scale: float = 1.0  # 0.75, 1.0, 1.25, 1.50
+        self.touch_alpha: int = 180    # 76 (30%), 128 (50%), 190 (75%), 255 (100%)
+        self.touch_style: str = "classic"  # "classic", "compact", "wide"
+        self.aspect_ratio_mode: str = "auto"  # "auto", "stretch", "16:9", "21:9", "4:3"
+        self.mouse_captured: bool = False
 
         # Touch Layout geometry
         self.left_stick = {"base_x": 0, "base_y": 0, "knob_x": 0, "knob_y": 0, "radius": 75, "val_x": 0.0, "val_y": 0.0}
@@ -205,11 +247,43 @@ class GameGhostViewer:
         """Update virtual gamepad positions relative to screen dimensions (Landscape layout)."""
         w, h = self.win_w, self.win_h
         theme_cfg = THEME_PRESETS.get(self.overlay_theme, THEME_PRESETS["cyan"])
+        scale = self.touch_scale
 
-        # Left Thumbstick (Bottom Left)
-        ls_x = int(w * 0.14)
-        ls_y = int(h * 0.72)
-        ls_r = int(min(w, h) * 0.14)
+        # Position profiles: classic, compact, wide
+        if self.touch_style == "compact":
+            ls_x = int(w * 0.10)
+            ls_y = int(h * 0.78)
+            rs_x = int(w * 0.90)
+            rs_y = int(h * 0.78)
+            face_cx = int(w * 0.90)
+            face_cy = int(h * 0.30)
+            dpad_cx = int(w * 0.10)
+            dpad_cy = int(h * 0.30)
+        elif self.touch_style == "wide":
+            ls_x = int(w * 0.18)
+            ls_y = int(h * 0.70)
+            rs_x = int(w * 0.82)
+            rs_y = int(h * 0.70)
+            face_cx = int(w * 0.84)
+            face_cy = int(h * 0.34)
+            dpad_cx = int(w * 0.16)
+            dpad_cy = int(h * 0.34)
+        else:  # classic
+            ls_x = int(w * 0.14)
+            ls_y = int(h * 0.72)
+            rs_x = int(w * 0.86)
+            rs_y = int(h * 0.72)
+            face_cx = int(w * 0.87)
+            face_cy = int(h * 0.32)
+            dpad_cx = int(w * 0.13)
+            dpad_cy = int(h * 0.32)
+
+        ls_r = int(min(w, h) * 0.14 * scale)
+        rs_r = int(min(w, h) * 0.14 * scale)
+        btn_r = int(min(w, h) * 0.065 * scale)
+        spacing = int(btn_r * 2.2)
+        dpad_s = int(btn_r * 2.0)
+
         self.left_stick = {
             "base_x": ls_x,
             "base_y": ls_y,
@@ -220,10 +294,6 @@ class GameGhostViewer:
             "val_y": 0.0
         }
 
-        # Right Thumbstick (Bottom Right)
-        rs_x = int(w * 0.86)
-        rs_y = int(h * 0.72)
-        rs_r = int(min(w, h) * 0.14)
         self.right_stick = {
             "base_x": rs_x,
             "base_y": rs_y,
@@ -233,15 +303,6 @@ class GameGhostViewer:
             "val_x": 0.0,
             "val_y": 0.0
         }
-
-        btn_r = int(min(w, h) * 0.065)
-        face_cx = int(w * 0.87)
-        face_cy = int(h * 0.32)
-        spacing = int(btn_r * 2.2)
-
-        dpad_cx = int(w * 0.13)
-        dpad_cy = int(h * 0.32)
-        dpad_s = int(btn_r * 2.0)
 
         # Style profiles: Xbox (Y, B, A, X) vs PlayStation (Triangle, Circle, Cross, Square)
         if self.controller_theme == "playstation":
@@ -296,8 +357,8 @@ class GameGhostViewer:
         self.settings_btn = pygame.Rect(w - s_btn_w - int(w * 0.02), int(h * 0.02), s_btn_w, s_btn_h)
 
         # Settings Drawer / Modal Dialog (Centered Landscape Panel)
-        modal_w = min(int(w * 0.72), 680)
-        modal_h = min(int(h * 0.88), 460)
+        modal_w = min(int(w * 0.78), 740)
+        modal_h = min(int(h * 0.94), 540)
         modal_x = (w - modal_w) // 2
         modal_y = (h - modal_h) // 2
         self.modal_rect = pygame.Rect(modal_x, modal_y, modal_w, modal_h)
@@ -305,37 +366,52 @@ class GameGhostViewer:
         pad_x = int(modal_w * 0.05)
         content_w = modal_w - pad_x * 2
         col_w = (content_w - 16) // 2
-        row_h = max(32, int(modal_h * 0.095))
+        row_h = max(28, int(modal_h * 0.075))
+        gap_y = 7
 
         # Row 1: Controller Layout & Quality Preset
-        r1_y = modal_y + 50
+        r1_y = modal_y + 46
         btn_layout = pygame.Rect(modal_x + pad_x, r1_y, col_w, row_h)
         btn_preset = pygame.Rect(modal_x + pad_x + col_w + 16, r1_y, col_w, row_h)
 
         # Row 2: Target FPS & Overlay Theme
-        r2_y = r1_y + row_h + 10
+        r2_y = r1_y + row_h + gap_y
         btn_fps = pygame.Rect(modal_x + pad_x, r2_y, col_w, row_h)
         btn_theme = pygame.Rect(modal_x + pad_x + col_w + 16, r2_y, col_w, row_h)
 
         # Row 3: HUD Visibility & Audio Stream Mute
-        r3_y = r2_y + row_h + 10
+        r3_y = r2_y + row_h + gap_y
         btn_view = pygame.Rect(modal_x + pad_x, r3_y, col_w, row_h)
         btn_audio = pygame.Rect(modal_x + pad_x + col_w + 16, r3_y, col_w, row_h)
 
-        # Row 4: Game Quick Launchers
-        r4_y = r3_y + row_h + 38
+        # Row 4: Touch Scale & Touch Opacity
+        r4_y = r3_y + row_h + gap_y
+        btn_scale = pygame.Rect(modal_x + pad_x, r4_y, col_w, row_h)
+        btn_alpha = pygame.Rect(modal_x + pad_x + col_w + 16, r4_y, col_w, row_h)
+
+        # Row 5: Touch Layout Style & Screen Aspect Ratio
+        r5_y = r4_y + row_h + gap_y
+        btn_style = pygame.Rect(modal_x + pad_x, r5_y, col_w, row_h)
+        btn_ratio = pygame.Rect(modal_x + pad_x + col_w + 16, r5_y, col_w, row_h)
+
+        # Row 6: Mouse & Keyboard Capture Toggle
+        r6_y = r5_y + row_h + gap_y
+        btn_mouse = pygame.Rect(modal_x + pad_x, r6_y, content_w, row_h)
+
+        # Row 7: Game Quick Launchers
+        r7_y = r6_y + row_h + 30
         catalog_games = ["dmc5", "sekiro", "tekken8", "mk11", "mgr", "rottr"]
         game_btn_w = (content_w - (len(catalog_games) - 1) * 8) // len(catalog_games)
         game_btns = {}
         for idx, gid in enumerate(catalog_games):
             gx = modal_x + pad_x + idx * (game_btn_w + 8)
-            game_btns[gid] = pygame.Rect(gx, r4_y, game_btn_w, max(28, int(row_h * 0.9)))
+            game_btns[gid] = pygame.Rect(gx, r7_y, game_btn_w, max(26, int(row_h * 0.9)))
 
-        # Row 5: Close / Resume button
-        btn_close = pygame.Rect(modal_x + pad_x, modal_y + modal_h - row_h - 16, content_w, row_h)
+        # Bottom: Close / Resume button
+        btn_close = pygame.Rect(modal_x + pad_x, modal_y + modal_h - row_h - 14, content_w, row_h)
 
         # Top close 'X' button
-        btn_x_close = pygame.Rect(modal_x + modal_w - 38, modal_y + 12, 26, 26)
+        btn_x_close = pygame.Rect(modal_x + modal_w - 36, modal_y + 12, 24, 24)
 
         self.settings_modal = {
             "rect": self.modal_rect,
@@ -345,6 +421,11 @@ class GameGhostViewer:
             "theme": btn_theme,
             "view": btn_view,
             "audio": btn_audio,
+            "scale": btn_scale,
+            "alpha": btn_alpha,
+            "style": btn_style,
+            "ratio": btn_ratio,
+            "mouse": btn_mouse,
             "games": game_btns,
             "close": btn_close,
             "x_close": btn_x_close
@@ -416,6 +497,43 @@ class GameGhostViewer:
         self.audio_muted = not self.audio_muted
         state = "MUTED" if self.audio_muted else "ACTIVE (44.1kHz)"
         self.notify(f"Audio Stream: {state}")
+
+    def cycle_touch_scale(self):
+        scales = [0.75, 1.0, 1.25, 1.50]
+        idx = (scales.index(self.touch_scale) + 1) % len(scales) if self.touch_scale in scales else 1
+        self.touch_scale = scales[idx]
+        self._update_layout()
+        self.notify(f"Touch Scale: {int(self.touch_scale * 100)}%")
+
+    def cycle_touch_alpha(self):
+        alphas = [76, 128, 190, 255]
+        labels = {76: "30%", 128: "50%", 190: "75%", 255: "100%"}
+        idx = (alphas.index(self.touch_alpha) + 1) % len(alphas) if self.touch_alpha in alphas else 2
+        self.touch_alpha = alphas[idx]
+        self.notify(f"Touch Opacity: {labels.get(self.touch_alpha, '75%')}")
+
+    def cycle_touch_style(self):
+        styles = ["classic", "compact", "wide"]
+        idx = (styles.index(self.touch_style) + 1) % len(styles) if self.touch_style in styles else 0
+        self.touch_style = styles[idx]
+        self._update_layout()
+        self.notify(f"Touch Layout: {self.touch_style.upper()}")
+
+    def cycle_aspect_ratio(self):
+        ratios = ["auto", "stretch", "16:9", "21:9", "4:3"]
+        idx = (ratios.index(self.aspect_ratio_mode) + 1) % len(ratios) if self.aspect_ratio_mode in ratios else 0
+        self.aspect_ratio_mode = ratios[idx]
+        self.notify(f"Aspect Ratio: {self.aspect_ratio_mode.upper()}")
+
+    def toggle_mouse_capture(self):
+        self.mouse_captured = not self.mouse_captured
+        try:
+            pygame.event.set_grab(self.mouse_captured)
+            pygame.mouse.set_visible(not self.mouse_captured)
+        except Exception:
+            pass
+        state = "LOCKED (F10 to release)" if self.mouse_captured else "RELEASED"
+        self.notify(f"Mouse Capture: {state}")
 
     def toggle_settings(self):
         self.settings_open = not self.settings_open
@@ -662,6 +780,21 @@ class GameGhostViewer:
             if sm["audio"].collidepoint(px, py):
                 self.toggle_audio()
                 return
+            if sm["scale"].collidepoint(px, py):
+                self.cycle_touch_scale()
+                return
+            if sm["alpha"].collidepoint(px, py):
+                self.cycle_touch_alpha()
+                return
+            if sm["style"].collidepoint(px, py):
+                self.cycle_touch_style()
+                return
+            if sm["ratio"].collidepoint(px, py):
+                self.cycle_aspect_ratio()
+                return
+            if sm["mouse"].collidepoint(px, py):
+                self.toggle_mouse_capture()
+                return
             for gid, rect in sm.get("games", {}).items():
                 if rect.collidepoint(px, py):
                     self.send_input({"type": "launch", "game": gid})
@@ -676,6 +809,18 @@ class GameGhostViewer:
         if self.settings_btn.collidepoint(px, py):
             self.settings_open = True
             return
+
+        # Visual feedback animation: spawn touch ripple on screen
+        theme_cfg = THEME_PRESETS.get(self.overlay_theme, THEME_PRESETS["cyan"])
+        accent = theme_cfg["accent"]
+        self.ripples.append({
+            "x": px,
+            "y": py,
+            "r": 8,
+            "max_r": int(42 * self.touch_scale),
+            "alpha": 220,
+            "color": accent
+        })
 
         # If visibility is hidden or off, do not consume touches as virtual buttons
         if self.visibility_mode in ("hidden", "off"):
@@ -703,6 +848,7 @@ class GameGhostViewer:
                 dist = math.hypot(px - binfo["x"], py - binfo["y"])
                 if dist <= binfo["r"] * 1.3:
                     self.active_touches[finger_id] = {"target": "button", "bkey": bkey}
+                    self.pressed_buttons.add(bkey)
                     self._dispatch_button(binfo, 1)
                     return
         else:
@@ -712,6 +858,7 @@ class GameGhostViewer:
                 dist = math.hypot(px - binfo["x"], py - binfo["y"])
                 if dist <= binfo["r"] * 1.3:
                     self.active_touches[finger_id] = {"target": "button", "bkey": bkey}
+                    self.pressed_buttons.add(bkey)
                     self._dispatch_button(binfo, 1)
                     return
 
@@ -748,8 +895,10 @@ class GameGhostViewer:
             self.send_input({"type": "stick", "which": "right", "x": 0.0, "y": 0.0})
         elif target == "button":
             bkey = touch.get("bkey")
-            if bkey in self.buttons:
-                self._dispatch_button(self.buttons[bkey], 0)
+            if bkey:
+                self.pressed_buttons.discard(bkey)
+                if bkey in self.buttons:
+                    self._dispatch_button(self.buttons[bkey], 0)
 
     def _update_stick(self, which: str, px: float, py: float):
         st = self.left_stick if which == "left" else self.right_stick
@@ -897,34 +1046,57 @@ class GameGhostViewer:
 
         # 2. Virtual Gamepad On-Screen Controls (only if settings modal is closed)
         if not self.settings_open and self.show_overlay and self.visibility_mode not in ("hidden", "off"):
+            # Visual feedback animations: draw expanding touch ripples
+            alive_ripples = []
+            for r in self.ripples:
+                r["r"] += 3
+                r["alpha"] = max(0, r["alpha"] - 14)
+                if r["alpha"] > 0 and r["r"] <= r["max_r"]:
+                    r_col = (r["color"][0], r["color"][1], r["color"][2], r["alpha"])
+                    pygame.gfxdraw.aacircle(overlay, int(r["x"]), int(r["y"]), int(r["r"]), r_col)
+                    alive_ripples.append(r)
+            self.ripples = alive_ripples
+
             # Draw Left Stick
             ls = self.left_stick
-            base_col = theme_cfg["stick_base"]
-            knob_col = theme_cfg["stick_knob"]
+            base_col = (theme_cfg["stick_base"][0], theme_cfg["stick_base"][1], theme_cfg["stick_base"][2], int(self.touch_alpha * 0.75))
+            knob_col = (theme_cfg["stick_knob"][0], theme_cfg["stick_knob"][1], theme_cfg["stick_knob"][2], self.touch_alpha)
             pygame.gfxdraw.filled_circle(overlay, ls["base_x"], ls["base_y"], ls["radius"], base_col)
-            pygame.gfxdraw.aacircle(overlay, ls["base_x"], ls["base_y"], ls["radius"], (accent[0], accent[1], accent[2], 180))
+            pygame.gfxdraw.aacircle(overlay, ls["base_x"], ls["base_y"], ls["radius"], (accent[0], accent[1], accent[2], min(255, self.touch_alpha + 30)))
             knob_r = int(ls["radius"] * 0.45)
             pygame.gfxdraw.filled_circle(overlay, ls["knob_x"], ls["knob_y"], knob_r, knob_col)
-            pygame.gfxdraw.aacircle(overlay, ls["knob_x"], ls["knob_y"], knob_r, (255, 255, 255, 220))
+            pygame.gfxdraw.aacircle(overlay, ls["knob_x"], ls["knob_y"], knob_r, (255, 255, 255, min(255, self.touch_alpha + 40)))
 
             # Draw Right Stick
             rs = self.right_stick
             pygame.gfxdraw.filled_circle(overlay, rs["base_x"], rs["base_y"], rs["radius"], base_col)
-            pygame.gfxdraw.aacircle(overlay, rs["base_x"], rs["base_y"], rs["radius"], (accent[0], accent[1], accent[2], 180))
+            pygame.gfxdraw.aacircle(overlay, rs["base_x"], rs["base_y"], rs["radius"], (accent[0], accent[1], accent[2], min(255, self.touch_alpha + 30)))
             pygame.gfxdraw.filled_circle(overlay, rs["knob_x"], rs["knob_y"], knob_r, knob_col)
-            pygame.gfxdraw.aacircle(overlay, rs["knob_x"], rs["knob_y"], knob_r, (255, 255, 255, 220))
+            pygame.gfxdraw.aacircle(overlay, rs["knob_x"], rs["knob_y"], knob_r, (255, 255, 255, min(255, self.touch_alpha + 40)))
 
             # Draw Action Buttons & D-Pad (if not minimal, or selective in minimal)
             for bkey, binfo in self.buttons.items():
                 if self.visibility_mode == "minimal" and binfo["type"] not in ("trigger",) and bkey not in ("L3", "R3", "L1", "R1", "SELECT", "START"):
                     continue
 
-                bx, by, br = binfo["x"], binfo["y"], binfo["r"]
+                is_pressed = bkey in self.pressed_buttons
+                bx = binfo["x"]
+                by = binfo["y"] + (2 if is_pressed else 0)  # Active button depression
+                br = binfo["r"]
                 color = binfo["color"]
-                pygame.gfxdraw.filled_circle(overlay, bx, by, br, (color[0], color[1], color[2], 120))
-                pygame.gfxdraw.aacircle(overlay, bx, by, br, (color[0], color[1], color[2], 220))
+                alpha_fill = min(255, self.touch_alpha + (65 if is_pressed else 0))
+                alpha_border = min(255, self.touch_alpha + (75 if is_pressed else 20))
 
-                lbl = font.render(binfo["label"], True, (255, 255, 255))
+                # Visual feedback animation: active glow halo when pressed
+                if is_pressed:
+                    pygame.gfxdraw.filled_circle(overlay, bx, by, br + 4, (color[0], color[1], color[2], 90))
+                    pygame.gfxdraw.aacircle(overlay, bx, by, br + 4, (255, 255, 255, 180))
+
+                pygame.gfxdraw.filled_circle(overlay, bx, by, br, (color[0], color[1], color[2], alpha_fill))
+                border_color = (255, 255, 255) if is_pressed else color
+                pygame.gfxdraw.aacircle(overlay, bx, by, br, (border_color[0], border_color[1], border_color[2], alpha_border))
+
+                lbl = font.render(binfo["label"], True, (255, 255, 180) if is_pressed else (255, 255, 255))
                 overlay.blit(lbl, (bx - lbl.get_width() // 2, by - lbl.get_height() // 2))
 
         # 3. Status HUD Bar (Top Left) (only if settings modal is closed)
@@ -933,7 +1105,8 @@ class GameGhostViewer:
                 status_color = (0, 230, 118)
                 fps_tag = f"FPS: {self.fps}/{self.target_fps}{' (AUTO)' if self.auto_fps else ''}"
                 audio_tag = "MUTED" if self.audio_muted else "AUDIO ON"
-                status_text = f"GAMEGHOST // {fps_tag} | {self.preset.upper()} | {self.controller_theme.upper()} | {audio_tag} | PING: {self.latency_ms}ms"
+                mouse_tag = " [MOUSE LOCKED]" if self.mouse_captured else ""
+                status_text = f"GAMEGHOST // {fps_tag} | {self.preset.upper()} | {self.controller_theme.upper()} | {audio_tag}{mouse_tag} | PING: {self.latency_ms}ms"
             else:
                 status_color = (255, 185, 0)
                 status_text = f"GAMEGHOST // LOOKING FOR INPUTS FROM PC ({self.host_ip}:{self.port})..."
@@ -955,7 +1128,7 @@ class GameGhostViewer:
 
             # Header Title
             title_lbl = big_font.render("GAMEGHOST CONTROL CENTER", True, accent)
-            overlay.blit(title_lbl, (m_rect.centerx - title_lbl.get_width() // 2, m_rect.y + 16))
+            overlay.blit(title_lbl, (m_rect.centerx - title_lbl.get_width() // 2, m_rect.y + 14))
 
             # Close 'X' button
             xb = sm["x_close"]
@@ -979,10 +1152,15 @@ class GameGhostViewer:
             _draw_opt_btn(sm["theme"], "COLOR THEME", self.overlay_theme.upper(), True)
             _draw_opt_btn(sm["view"], "HUD OVERLAY", self.visibility_mode.upper(), True)
             _draw_opt_btn(sm["audio"], "AUDIO STREAM", "MUTED" if self.audio_muted else "ACTIVE (44.1kHz)", not self.audio_muted)
+            _draw_opt_btn(sm["scale"], "TOUCH SCALE", f"{int(self.touch_scale * 100)}%", True)
+            _draw_opt_btn(sm["alpha"], "TOUCH OPACITY", f"{int(self.touch_alpha / 255 * 100)}%", True)
+            _draw_opt_btn(sm["style"], "TOUCH STYLE", self.touch_style.upper(), True)
+            _draw_opt_btn(sm["ratio"], "SCREEN RATIO", self.aspect_ratio_mode.upper(), True)
+            _draw_opt_btn(sm["mouse"], "MOUSE / KEYBOARD CAPTURE", "LOCKED (F10 TO RELEASE)" if self.mouse_captured else "CLICK TO LOCK MOUSE (F10)", self.mouse_captured)
 
             # Game Quick Launchers Header
             q_lbl = small_font.render("REMOTE LAUNCH GAME ON PC:", True, (160, 185, 210))
-            overlay.blit(q_lbl, (m_rect.x + int(m_rect.width * 0.05), sm["games"]["dmc5"].y - 20))
+            overlay.blit(q_lbl, (m_rect.x + int(m_rect.width * 0.05), sm["games"]["dmc5"].y - 18))
 
             game_names = {
                 "dmc5": "DMC 5",
@@ -1124,24 +1302,31 @@ class GameGhostViewer:
                         joy = pygame.joystick.Joystick(event.device_index)
                         joy.init()
                         self.joysticks[joy.get_instance_id()] = joy
-                        console.print(f"[bold green][GAMEPAD][/bold green] Connected hardware controller: {joy.get_name()}")
-                        self.notify(f"Connected: {joy.get_name()[:20]}")
+                        prof = detect_controller_profile(joy.get_name())
+                        self.joystick_profiles[joy.get_instance_id()] = prof
+                        console.print(f"[bold green][GAMEPAD][/bold green] Connected hardware controller: {joy.get_name()} [{prof.upper()}]")
+                        self.notify(f"Connected: {joy.get_name()[:16]} [{prof.upper()}]")
                     except Exception:
                         pass
 
                 elif event.type == pygame.JOYDEVICEREMOVED:
                     joy = self.joysticks.pop(event.instance_id, None)
+                    self.joystick_profiles.pop(event.instance_id, None)
                     if joy:
                         console.print(f"[bold yellow][GAMEPAD][/bold yellow] Disconnected controller: {joy.get_name()}")
                         self.notify("Gamepad Disconnected")
 
                 elif event.type == pygame.JOYBUTTONDOWN:
-                    btn_name = JOY_BTN_MAP.get(event.button)
+                    prof = self.joystick_profiles.get(event.instance_id, "xbox")
+                    btn_map = GAMEPAD_PROFILES.get(prof, GAMEPAD_PROFILES["xbox"])
+                    btn_name = btn_map.get(event.button)
                     if btn_name:
                         self.send_input({"type": "btn", "name": btn_name, "val": 1})
 
                 elif event.type == pygame.JOYBUTTONUP:
-                    btn_name = JOY_BTN_MAP.get(event.button)
+                    prof = self.joystick_profiles.get(event.instance_id, "xbox")
+                    btn_map = GAMEPAD_PROFILES.get(prof, GAMEPAD_PROFILES["xbox"])
+                    btn_name = btn_map.get(event.button)
                     if btn_name:
                         self.send_input({"type": "btn", "name": btn_name, "val": 0})
 
@@ -1152,19 +1337,39 @@ class GameGhostViewer:
                     hx, hy = event.value
                     self.send_input({"type": "dpad", "x": hx, "y": -hy, "val": 1 if (hx != 0 or hy != 0) else 0})
 
-                # Mouse Fallback (Single pointer testing on PC)
-                elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    self._handle_touch_down(999, event.pos[0], event.pos[1])
+                # Mouse Events (Mouse & Keyboard Forwarding + Touch Fallback)
+                elif event.type == pygame.MOUSEMOTION:
+                    if self.mouse_captured:
+                        dx, dy = event.rel
+                        self.send_input({"type": "mouse_move", "dx": dx, "dy": dy})
+                    elif event.buttons[0] == 1:
+                        self._handle_touch_motion(999, event.pos[0], event.pos[1])
 
-                elif event.type == pygame.MOUSEMOTION and (event.buttons[0] == 1):
-                    self._handle_touch_motion(999, event.pos[0], event.pos[1])
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    if self.mouse_captured:
+                        b_map = {1: "left", 2: "middle", 3: "right"}
+                        btn = b_map.get(event.button, "left")
+                        self.send_input({"type": "mouse_btn", "btn": btn, "val": 1})
+                    elif event.button == 1:
+                        self._handle_touch_down(999, event.pos[0], event.pos[1])
 
-                elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
-                    self._handle_touch_up(999)
+                elif event.type == pygame.MOUSEBUTTONUP:
+                    if self.mouse_captured:
+                        b_map = {1: "left", 2: "middle", 3: "right"}
+                        btn = b_map.get(event.button, "left")
+                        self.send_input({"type": "mouse_btn", "btn": btn, "val": 0})
+                    elif event.button == 1:
+                        self._handle_touch_up(999)
+
+                elif event.type == pygame.MOUSEWHEEL:
+                    if self.mouse_captured:
+                        self.send_input({"type": "mouse_scroll", "dx": event.x, "dy": event.y})
 
                 # Keyboard hotkeys & controller fallback
                 elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_F11:
+                    if event.key == pygame.K_F10:
+                        self.toggle_mouse_capture()
+                    elif event.key == pygame.K_F11:
                         self.fullscreen = not self.fullscreen
                         flags_fs = pygame.DOUBLEBUF | pygame.RESIZABLE
                         if self.fullscreen:
@@ -1177,7 +1382,9 @@ class GameGhostViewer:
                     elif event.key in (pygame.K_m, pygame.K_s):
                         self.toggle_settings()
                     elif event.key == pygame.K_ESCAPE:
-                        if self.settings_open:
+                        if self.mouse_captured:
+                            self.toggle_mouse_capture()
+                        elif self.settings_open:
                             self.settings_open = False
                         else:
                             self.running = False
@@ -1193,6 +1400,9 @@ class GameGhostViewer:
                         self.cycle_visibility()
                     elif event.key == pygame.K_h:
                         self.show_overlay = not self.show_overlay
+                    elif self.mouse_captured:
+                        kname = pygame.key.name(event.key)
+                        self.send_input({"type": "key", "name": kname, "val": 1})
                     elif event.key in KEY_BTN_MAP and not self.settings_open:
                         bname = KEY_BTN_MAP[event.key]
                         self.send_input({"type": "btn", "name": bname, "val": 1})
@@ -1201,12 +1411,13 @@ class GameGhostViewer:
                         self.send_input({"type": "dpad", "dir": dname, "x": dx, "y": dy, "val": 1})
 
                 elif event.type == pygame.KEYUP:
-                    if event.key in KEY_BTN_MAP and not self.settings_open:
+                    if self.mouse_captured:
+                        kname = pygame.key.name(event.key)
+                        self.send_input({"type": "key", "name": kname, "val": 0})
+                    elif event.key in KEY_BTN_MAP and not self.settings_open:
                         bname = KEY_BTN_MAP[event.key]
                         self.send_input({"type": "btn", "name": bname, "val": 0})
                     elif event.key in KEY_DPAD_MAP and not self.settings_open:
-                        dx, dy, dname = KEY_DPAD_MAP[event.key]
-                        self.send_input({"type": "dpad", "dir": dname, "x": dx, "y": dy, "val": 0})
                         dx, dy, dname = KEY_DPAD_MAP[event.key]
                         self.send_input({"type": "dpad", "dir": dname, "x": dx, "y": dy, "val": 0})
 
@@ -1233,7 +1444,8 @@ class GameGhostViewer:
                 draw_w, draw_h, off_x, off_y = calculate_letterbox(
                     self.win_w, self.win_h,
                     current_game_surface.get_width(),
-                    current_game_surface.get_height()
+                    current_game_surface.get_height(),
+                    aspect_mode=self.aspect_ratio_mode
                 )
                 if draw_w != current_game_surface.get_width() or draw_h != current_game_surface.get_height():
                     scaled = pygame.transform.scale(current_game_surface, (draw_w, draw_h))

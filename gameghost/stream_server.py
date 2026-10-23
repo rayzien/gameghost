@@ -381,7 +381,7 @@ class GameStreamServer:
                         data = json.loads(message)
                         msg_type = data.get("type")
 
-                        if msg_type in ("btn", "stick", "trigger", "dpad"):
+                        if msg_type in ("btn", "stick", "trigger", "dpad", "mouse_move", "mouse_btn", "mouse_scroll", "key"):
                             self.gamepad.handle_packet(data)
 
                         elif msg_type == "launch":
