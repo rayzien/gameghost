@@ -2,16 +2,17 @@ import os
 import sys
 
 # Mesa, EGL, DRI2 & Zink error mitigation:
-# Prevents 'failed to choose pdev', 'DRI2 screen failed', and 'zink' crashes in Termux / Linux
-os.environ["LIBGL_ALWAYS_SOFTWARE"] = "1"
-os.environ["GALLIUM_DRIVER"] = "llvmpipe"
-os.environ["MESA_LOADER_DRIVER_OVERRIDE"] = "llvmpipe"
-os.environ["SDL_RENDER_DRIVER"] = "software"
-os.environ["SDL_VIDEO_X11_NODIRECTCOLOR"] = "1"
-os.environ["SDL_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR"] = "0"
+# Prevents 'failed to choose pdev', 'DRI2 screen failed', and 'zink' crashes in Termux
+if "TERMUX_VERSION" in os.environ or os.path.exists("/data/data/com.termux"):
+    os.environ["LIBGL_ALWAYS_SOFTWARE"] = "1"
+    os.environ["GALLIUM_DRIVER"] = "llvmpipe"
+    os.environ["MESA_LOADER_DRIVER_OVERRIDE"] = "llvmpipe"
+    os.environ["SDL_RENDER_DRIVER"] = "software"
+    os.environ["SDL_VIDEO_X11_NODIRECTCOLOR"] = "1"
+    os.environ["SDL_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR"] = "0"
+    os.environ["MESA_DEBUG"] = "silent"
+    os.environ["EGL_LOG_LEVEL"] = "fatal"
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
-os.environ["MESA_DEBUG"] = "silent"
-os.environ["EGL_LOG_LEVEL"] = "fatal"
 
 # Force Landscape Orientation Environment Hints for SDL2 & Termux-X11
 os.environ["SDL_VIDEO_ALLOW_SCREENSAVER"] = "0"
@@ -625,12 +626,15 @@ class GameGhostViewer:
                                 try:
                                     msg = await ws.recv()
                                     if isinstance(msg, bytes):
-                                        if self.frame_queue.full():
-                                            try:
-                                                self.frame_queue.get_nowait()
-                                            except queue.Empty:
-                                                pass
-                                        self.frame_queue.put(msg)
+                                        try:
+                                            if self.frame_queue.full():
+                                                try:
+                                                    self.frame_queue.get_nowait()
+                                                except queue.Empty:
+                                                    pass
+                                            self.frame_queue.put_nowait(msg)
+                                        except Exception:
+                                            pass
                                     elif isinstance(msg, str):
                                         try:
                                             data = json.loads(msg)
@@ -674,7 +678,7 @@ class GameGhostViewer:
                                 except (websockets.ConnectionClosed, asyncio.CancelledError):
                                     break
                                 except Exception:
-                                    break
+                                    await asyncio.sleep(0.005)
 
                         task_recv = asyncio.create_task(_recv_frames())
                         task_send = asyncio.create_task(_send_events())
@@ -1225,9 +1229,12 @@ class GameGhostViewer:
             self.win_w = 1280
             self.win_h = 720
 
+        is_termux = "TERMUX_VERSION" in os.environ or os.path.exists("/data/data/com.termux")
         flags = pygame.DOUBLEBUF | pygame.RESIZABLE
-        if self.fullscreen:
+        if self.fullscreen and not is_termux:
             flags |= pygame.FULLSCREEN
+        elif self.fullscreen and is_termux:
+            flags |= pygame.NOFRAME
 
         screen = None
         try:
@@ -1268,6 +1275,8 @@ class GameGhostViewer:
 
         clock = pygame.time.Clock()
         current_game_surface: Optional[pygame.Surface] = None
+        cached_scaled_surface: Optional[pygame.Surface] = None
+        cached_frame_key: Optional[Tuple[int, int]] = None
         last_fps_time = time.time()
 
         while self.running:
@@ -1279,7 +1288,12 @@ class GameGhostViewer:
                 elif event.type == pygame.VIDEORESIZE:
                     self.win_w = max(event.w, event.h)
                     self.win_h = min(event.w, event.h)
-                    screen = safe_set_mode((self.win_w, self.win_h), flags)
+                    try:
+                        screen = safe_set_mode((self.win_w, self.win_h), flags)
+                    except Exception:
+                        pass
+                    cached_scaled_surface = None
+                    cached_frame_key = None
                     self._update_layout()
 
                 # Native Multi-Touch Events (SDL2 / Termux / Touchscreens)
@@ -1422,10 +1436,12 @@ class GameGhostViewer:
                         self.send_input({"type": "dpad", "dir": dname, "x": dx, "y": dy, "val": 0})
 
             # 2. Decompress latest video frame from network queue
+            new_frame_arrived = False
             try:
                 frame_bytes = self.frame_queue.get_nowait()
                 current_game_surface = pygame.image.load(io.BytesIO(frame_bytes)).convert()
                 self.frame_count += 1
+                new_frame_arrived = True
             except queue.Empty:
                 pass
             except Exception:
@@ -1448,8 +1464,10 @@ class GameGhostViewer:
                     aspect_mode=self.aspect_ratio_mode
                 )
                 if draw_w != current_game_surface.get_width() or draw_h != current_game_surface.get_height():
-                    scaled = pygame.transform.scale(current_game_surface, (draw_w, draw_h))
-                    screen.blit(scaled, (off_x, off_y))
+                    if new_frame_arrived or cached_scaled_surface is None or cached_frame_key != (draw_w, draw_h):
+                        cached_scaled_surface = pygame.transform.scale(current_game_surface, (draw_w, draw_h))
+                        cached_frame_key = (draw_w, draw_h)
+                    screen.blit(cached_scaled_surface, (off_x, off_y))
                 else:
                     screen.blit(current_game_surface, (off_x, off_y))
             else:
@@ -1481,11 +1499,35 @@ def run_client(
     audio_port: Optional[int] = None
 ):
     """Entry point for native GameGhost handheld client in Landscape Mode."""
-    if "DISPLAY" not in os.environ and os.path.exists("/data/data/com.termux/files"):
-        os.environ["DISPLAY"] = ":0"
+    is_termux = "TERMUX_VERSION" in os.environ or os.path.exists("/data/data/com.termux/files")
+    if is_termux:
+        prefix_tmp = "/data/data/com.termux/files/usr/tmp"
+        os.environ.setdefault("TMPDIR", prefix_tmp)
+        os.environ["SDL_VIDEODRIVER"] = "x11"
+        if "DISPLAY" not in os.environ:
+            target_disp = ":0"
+            for n in ("0", "1", "2"):
+                if os.path.exists(f"{prefix_tmp}/.X11-unix/X{n}") or os.path.exists(f"/tmp/.X11-unix/X{n}"):
+                    target_disp = f":{n}"
+                    break
+            os.environ["DISPLAY"] = target_disp
+
+        # Auto-launch Termux-X11 companion app into the foreground
+        try:
+            import subprocess
+            subprocess.run(["am", "start", "--user", "0", "-n", "com.termux.x11/com.termux.x11.MainActivity"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            try:
+                import subprocess
+                subprocess.run(["am", "start", "-n", "com.termux.x11/com.termux.x11.MainActivity"],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
 
     cfg = load_config()
-    preset = preset or cfg.get("preset", "1080p")
+    default_preset = "720p" if is_termux else "1080p"
+    preset = preset or cfg.get("preset", default_preset)
     layout = layout or cfg.get("controller_theme", "xbox")
     theme = theme or cfg.get("overlay_theme", "cyan")
     visibility = visibility or cfg.get("overlay_visibility", "full")

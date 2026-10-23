@@ -157,6 +157,9 @@ def launch_game(game_id: str = "dmc5", mute: bool = False) -> Optional[subproces
     desktop = info.get("desktop")
 
     env = os.environ.copy()
+    # Strip any software rasterizer variables that might poison Vulkan / VKD3D / DX12
+    for var in ("LIBGL_ALWAYS_SOFTWARE", "GALLIUM_DRIVER", "MESA_LOADER_DRIVER_OVERRIDE", "SDL_RENDER_DRIVER"):
+        env.pop(var, None)
     if "DISPLAY" not in env and os.path.exists("/tmp/.X11-unix/X0"):
         env["DISPLAY"] = ":0"
     if "XAUTHORITY" not in env or not os.path.exists(env.get("XAUTHORITY", "")):

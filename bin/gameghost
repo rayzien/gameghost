@@ -16,13 +16,22 @@ PROJECT_DIR="$( cd -P "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd )"
 
 # Termux environment support
 if [ -d "/data/data/com.termux/files/usr/bin" ]; then
+    export PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
     export PATH="/data/data/com.termux/files/usr/bin:${HOME}/bin:${PATH}"
+    export TMPDIR="${PREFIX}/tmp"
+    mkdir -p "${TMPDIR}" 2>/dev/null || true
 fi
 export PATH="${HOME}/.local/bin:${PATH}"
 
 # Ensure DISPLAY & XAUTHORITY
 if [ -z "$DISPLAY" ]; then
-    if [ -S "/tmp/.X11-unix/X0" ] || [ -S "${PREFIX}/tmp/.X11-unix/X0" ] || [ -d "/data/data/com.termux/files" ]; then
+    for num in 0 1 2; do
+        if [ -S "/tmp/.X11-unix/X${num}" ] || [ -S "${PREFIX}/tmp/.X11-unix/X${num}" ] || [ -S "/data/data/com.termux/files/usr/tmp/.X11-unix/X${num}" ]; then
+            export DISPLAY=":${num}"
+            break
+        fi
+    done
+    if [ -z "$DISPLAY" ] && [ -d "/data/data/com.termux/files" ]; then
         export DISPLAY=":0"
     fi
 fi
@@ -41,6 +50,7 @@ export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH}"
 
 # In Termux/Android, use system python3 directly with software fallback if needed
 if [ -n "$TERMUX_VERSION" ] || [ -d "/data/data/com.termux/files" ]; then
+    export SDL_VIDEODRIVER="x11"
     export LIBGL_ALWAYS_SOFTWARE="1"
     export GALLIUM_DRIVER="llvmpipe"
     export MESA_LOADER_DRIVER_OVERRIDE="llvmpipe"
@@ -49,6 +59,15 @@ if [ -n "$TERMUX_VERSION" ] || [ -d "/data/data/com.termux/files" ]; then
     export SDL_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR="0"
     export MESA_DEBUG="silent"
     export EGL_LOG_LEVEL="fatal"
+
+    # Bring Termux-X11 companion app to foreground if launching client/game
+    if [ "$1" = "client" ] || [ "$1" = "dmc5" ] || [ "$1" = "sekiro" ] || [ "$1" = "tekken8" ] || [ "$1" = "mk11" ] || [ "$1" = "mgr" ] || [ "$1" = "rottr" ] || [ -z "$1" ]; then
+        if command -v am >/dev/null 2>&1; then
+            am start --user 0 -n com.termux.x11/com.termux.x11.MainActivity >/dev/null 2>&1 || \
+            am start -n com.termux.x11/com.termux.x11.MainActivity >/dev/null 2>&1 || true
+        fi
+    fi
+
     exec python3 -m gameghost.cli "$@"
 fi
 

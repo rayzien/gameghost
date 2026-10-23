@@ -49,6 +49,46 @@ class _XClassHint(Structure):
     _fields_ = [("res_name", ctypes.c_void_p), ("res_class", ctypes.c_void_p)]
 
 
+class _XClientMessageEvent(Structure):
+    _fields_ = [
+        ("type", c_int),
+        ("serial", c_ulong),
+        ("send_event", c_int),
+        ("display", ctypes.c_void_p),
+        ("window", c_ulong),
+        ("message_type", c_ulong),
+        ("format", c_int),
+        ("data", c_long * 5)
+    ]
+
+
+def _activate_game_window(win_id: int) -> bool:
+    """Send _NET_ACTIVE_WINDOW to ensure the game is focused and rendered on the active workspace."""
+    try:
+        x11 = ctypes.cdll.LoadLibrary("libX11.so.6")
+        disp = x11.XOpenDisplay(None)
+        if not disp:
+            return False
+        root = x11.XDefaultRootWindow(disp)
+        atom_active = x11.XInternAtom(disp, b"_NET_ACTIVE_WINDOW", False)
+        ev = _XClientMessageEvent()
+        ev.type = 33  # ClientMessage
+        ev.window = win_id
+        ev.message_type = atom_active
+        ev.format = 32
+        ev.data[0] = 2  # Source: pager/launcher
+        ev.data[1] = 0
+        ev.data[2] = 0
+        ev.data[3] = 0
+        ev.data[4] = 0
+        x11.XSendEvent(disp, root, False, (1 << 19) | (1 << 20), byref(ev))
+        x11.XFlush(disp)
+        x11.XCloseDisplay(disp)
+        return True
+    except Exception:
+        return False
+
+
 def _find_target_game_window():
     try:
         x11 = ctypes.cdll.LoadLibrary("libX11.so.6")
@@ -247,25 +287,18 @@ class GameStreamServer:
                     sct, monitor = _try_init_sct()
                     current_target_win = None
 
-            # Periodically scan for active game window to grab directly on Xwayland/X11
+            # Periodically scan for active game window to bring it to focus and active workspace
             if sct and (t0 - last_win_check >= 1.5 or current_target_win is None):
                 last_win_check = t0
                 twin, tw, th = _find_target_game_window()
                 if twin and twin != current_target_win:
                     current_target_win = twin
-                    if hasattr(sct, "_impl") and hasattr(sct._impl, "root") and hasattr(sct._impl.root, "value"):
-                        sct._impl.root.value = twin
-                        monitor = {"left": 0, "top": 0, "width": tw, "height": th}
-                        console.print(f"[bold green][STREAM] Direct capture attached to game window {hex(twin)} ({tw}x{th})[/bold green]")
+                    _activate_game_window(twin)
+                    console.print(f"[bold green][STREAM] Attached & focused game window {hex(twin)} ({tw}x{th})[/bold green]")
                 elif not twin and current_target_win is not None:
                     current_target_win = None
-                    try:
-                        sct.close()
-                    except Exception:
-                        pass
-                    sct, monitor = _try_init_sct()
 
-            # Stream target game window if found; otherwise stream primary desktop monitor
+            # Stream composited primary desktop monitor (where active game is focused)
             if sct and monitor:
                 try:
                     raw = sct.grab(monitor)
@@ -280,38 +313,13 @@ class GameStreamServer:
                     img.save(buf, format="JPEG", quality=self.quality, optimize=False)
                     jpeg_bytes = buf.getvalue()
                 except Exception:
-                    # If direct window grab failed, recover to primary desktop monitor immediately
-                    if current_target_win is not None:
-                        current_target_win = None
-                        try:
-                            sct.close()
-                        except Exception:
-                            pass
-                        sct, monitor = _try_init_sct()
-                        if sct and monitor:
-                            try:
-                                raw = sct.grab(monitor)
-                                img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
-                                if self.scale != 1.0:
-                                    new_w = max(320, int(img.width * self.scale))
-                                    new_h = max(240, int(img.height * self.scale))
-                                    img = img.resize((new_w, new_h), Image.BILINEAR)
-                                buf = io.BytesIO()
-                                img.save(buf, format="JPEG", quality=self.quality, optimize=False)
-                                jpeg_bytes = buf.getvalue()
-                            except Exception:
-                                sct = None
-                                monitor = None
-                                last_init_attempt = t0
-                    else:
-                        try:
-                            sct.close()
-                        except Exception:
-                            pass
-                        sct = None
-                        monitor = None
-                        current_target_win = None
-                        last_init_attempt = t0
+                    try:
+                        sct.close()
+                    except Exception:
+                        pass
+                    sct = None
+                    monitor = None
+                    last_init_attempt = t0
 
             if not jpeg_bytes:
                 jpeg_bytes = self._render_standby_frame(t0)

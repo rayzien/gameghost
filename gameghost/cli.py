@@ -1,16 +1,17 @@
 import sys
 import os
 
-# Mesa, EGL, DRI2 & Zink error mitigation (prevents choose_pdev / dri2 failures in Termux)
-os.environ["LIBGL_ALWAYS_SOFTWARE"] = "1"
-os.environ["GALLIUM_DRIVER"] = "llvmpipe"
-os.environ["MESA_LOADER_DRIVER_OVERRIDE"] = "llvmpipe"
-os.environ["SDL_RENDER_DRIVER"] = "software"
-os.environ["SDL_VIDEO_X11_NODIRECTCOLOR"] = "1"
-os.environ["SDL_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR"] = "0"
+# Mesa, EGL, DRI2 & Zink error mitigation (prevents choose_pdev / dri2 failures in Termux only)
+if "TERMUX_VERSION" in os.environ or os.path.exists("/data/data/com.termux"):
+    os.environ["LIBGL_ALWAYS_SOFTWARE"] = "1"
+    os.environ["GALLIUM_DRIVER"] = "llvmpipe"
+    os.environ["MESA_LOADER_DRIVER_OVERRIDE"] = "llvmpipe"
+    os.environ["SDL_RENDER_DRIVER"] = "software"
+    os.environ["SDL_VIDEO_X11_NODIRECTCOLOR"] = "1"
+    os.environ["SDL_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR"] = "0"
+    os.environ["MESA_DEBUG"] = "silent"
+    os.environ["EGL_LOG_LEVEL"] = "fatal"
 os.environ["PYGAME_HIDE_SUPPORT_PROMPT"] = "1"
-os.environ["MESA_DEBUG"] = "silent"
-os.environ["EGL_LOG_LEVEL"] = "fatal"
 
 import time
 import subprocess

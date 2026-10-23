@@ -7,6 +7,6 @@ Credits:
 - pheonix14: CPUGhost engine integration, auto-FPS tuning, low-latency streaming pipeline
 """
 
-__version__ = "1.7.1"
+__version__ = "1.7.2"
 __author__ = "rayzien, pheonix14"
 __credits__ = ["rayzien", "pheonix14"]
