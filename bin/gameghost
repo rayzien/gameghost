@@ -1,6 +1,7 @@
 #!/bin/sh
 # ==============================================================================
 # GameGhost Universal CLI Launcher (Compatible with Linux & Android Termux)
+# Completely independent from external projects.
 # ==============================================================================
 set -e
 
@@ -38,7 +39,7 @@ fi
 export PYGAME_HIDE_SUPPORT_PROMPT="1"
 export PYTHONPATH="${PROJECT_DIR}:${PYTHONPATH}"
 
-# Mesa, EGL, DRI2 & Zink error suppression (Prevents choose_pdev / dri2 failures in Termux)
+# Mesa, EGL, DRI2 & Zink error suppression
 export LIBGL_ALWAYS_SOFTWARE="1"
 export GALLIUM_DRIVER="llvmpipe"
 export MESA_LOADER_DRIVER_OVERRIDE="llvmpipe"
@@ -53,16 +54,13 @@ if [ -n "$TERMUX_VERSION" ] || [ -d "/data/data/com.termux/files" ]; then
     exec python3 -m gameghost.cli "$@"
 fi
 
-# Share/use existing virtualenv or project venv
+# Self-contained project virtual environment (independent of CPUGhost)
 VENV_DIR="${PROJECT_DIR}/.venv"
-SHARED_VENV="/home/zero/Desktop/cpughost/.venv"
 
-if [ -f "${SHARED_VENV}/bin/python" ] && [ ! -d "${VENV_DIR}" ]; then
-    VENV_PYTHON="${SHARED_VENV}/bin/python"
-elif [ -f "${VENV_DIR}/bin/python" ]; then
+if [ -f "${VENV_DIR}/bin/python" ]; then
     VENV_PYTHON="${VENV_DIR}/bin/python"
 else
-    echo "[INFO] Initializing GameGhost Python environment..."
+    echo "[INFO] Initializing dedicated GameGhost Python environment..."
     DEPS="fastapi uvicorn websockets mss pillow pynput requests rich click evdev"
     if command -v uv >/dev/null 2>&1; then
         uv venv "${VENV_DIR}"
@@ -74,7 +72,7 @@ else
         "${VENV_DIR}/bin/pip" install $DEPS
         VENV_PYTHON="${VENV_DIR}/bin/python"
     fi
-    echo "[OK] GameGhost environment initialized."
+    echo "[OK] Dedicated GameGhost environment initialized."
 fi
 
 exec "$VENV_PYTHON" -m gameghost.cli "$@"
