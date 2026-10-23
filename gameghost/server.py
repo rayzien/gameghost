@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional
 from rich.console import Console
 
-from .config import load_config, get_local_ip, save_host_pid, clear_host_pid
+from .config import load_config, get_local_ip, save_host_pid, clear_host_pid, log_host, wait_for_hotspot_ip
 from .stream_server import GameStreamServer
 from .audio_server import GameAudioServer
 from .discovery import GameDiscovery
@@ -27,7 +27,8 @@ class GameGhostHost:
         self.cfg = load_config()
         self.stream_port = self.cfg.get("stream_port", 8900)
         self.audio_port = self.cfg.get("audio_port", 8901)
-        self.local_ip = get_local_ip()
+        self.local_ip = wait_for_hotspot_ip(timeout=15.0)
+        log_host(f'Host initialized with IP: {self.local_ip}')
 
         self.stream_server = GameStreamServer(
             host="0.0.0.0",
