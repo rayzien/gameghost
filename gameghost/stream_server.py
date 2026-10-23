@@ -14,7 +14,7 @@ from rich.console import Console
 
 from .gamepad import VirtualGamepad
 from .launcher import launch_game, list_games
-from .config import load_config, QUALITY_PRESETS
+from .config import load_config, QUALITY_PRESETS, log_host
 
 console = Console()
 
@@ -241,7 +241,8 @@ class GameStreamServer:
                         pass
                     sct, monitor = _try_init_sct()
 
-            if sct and monitor and current_target_win:
+            # Stream target game window if found; otherwise stream primary desktop monitor
+            if sct and monitor:
                 try:
                     raw = sct.grab(monitor)
                     img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
@@ -338,6 +339,7 @@ class GameStreamServer:
                         elif msg_type == "launch":
                             game_id = data.get("game", "dmc5")
                             console.print(f"[bold green][REMOTE LAUNCH][/bold green] Phone requested launch of: {game_id}")
+                            log_host(f"Client requested launch of game: {game_id}")
                             proc = launch_game(game_id)
                             await websocket.send(json.dumps({
                                 "type": "launch_ack",
@@ -409,6 +411,7 @@ class GameStreamServer:
             self.clients.discard(websocket)
             self.stats["clients"] = len(self.clients)
             console.print(f"[bold yellow][PHONE DISCONNECTED][/bold yellow] Client left: {client_addr}")
+            log_host(f"Client disconnected: {client_addr}")
 
     async def start(self):
         self.running = True
