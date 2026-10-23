@@ -1,9 +1,31 @@
-# GameGhost v1.7.2 — Multi-Controller, Mouse & Keyboard, Touch Customization & Feedback Hub
+# GameGhost v1.7.3 — Termux-X11 Stream Engine, Auto-Focus & Performance Release
 
 > **High-Performance PC Gaming Handheld Cast & Universal Controller Subsystem**  
 > *Created by rayzien & pheonix14*
 
-GameGhost v1.7.2 introduces comprehensive **Physical Controller Support** (Xbox, PlayStation, Nintendo Switch profiles with auto-detection, deadzones, trigger normalization), full **Mouse & Keyboard Forwarding** (relative motion capture, click injection, scroll wheel, full keyboard passthrough with F10 lock), interactive **On-Screen Touch Customization** (Scale 75%-150%, Opacity 30%-100%, Styles: Classic, Compact, Wide), **Visual Feedback Animations** (touch ripples and active button depression/glow), **Aspect Ratio Scaling Modes** (Auto, Stretch, 16:9, 21:9, 4:3), and verified stability for **Tekken 8** and **Mortal Kombat 11** under safe sink-level muting. Strict 0-emoji design across the entire codebase.
+GameGhost v1.7.3 delivers complete streaming fixes and optimizations for **Android Termux with Termux-X11**, introducing zero-black-screen root window compositing, automated game window focus via `_NET_ACTIVE_WINDOW`, multi-socket Termux display detection (`:0`, `:1`, `:2`), host software rasterizer isolation, non-blocking frame queueing, and cached surface scaling for butter-smooth 60 FPS mobile streaming.
+
+---
+
+## What is New in v1.7.3
+
+1. **Termux-X11 Stream Pipeline Fixes**:
+   - Resolved black-screen streaming by preserving root window capture and activating games via `_NET_ACTIVE_WINDOW`.
+   - Multi-socket display detection: auto-discovers `:0`, `:1`, `:2` displays across `${PREFIX}/tmp/.X11-unix/` and `/tmp/.X11-unix/`.
+   - Automated companion launch: seamlessly launches `com.termux.x11` Android app into the foreground.
+   - Replaced mode-switching `FULLSCREEN` on Termux-X11 with borderless resizable window to prevent SDL2 XRandR crashes.
+
+2. **Host GPU & Software Rasterizer Isolation**:
+   - Confined software rasterizer fallbacks (`llvmpipe`) strictly to Termux clients.
+   - PC host streaming and Wine/Proton games always utilize dedicated NVIDIA RTX GPU acceleration.
+
+3. **Client Decompression & Scaling Cache**:
+   - Implemented cached surface scaling in `GameGhostViewer` to avoid redundant CPU rescaling per tick.
+   - Non-blocking frame queueing (`put_nowait`) prevents asyncio event loop stalls and eliminates ping timeouts.
+
+---
+
+# GameGhost v1.7.2 — Multi-Controller, Mouse & Keyboard, Touch Customization & Feedback Hub
 
 ---
 

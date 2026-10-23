@@ -11,10 +11,10 @@ from gameghost.stream_server import _activate_game_window
 
 
 class TestTermuxX11AndStreaming(unittest.TestCase):
-    def test_version_v1_7_2(self):
-        """Verify release version is synchronized at v1.7.2."""
-        self.assertEqual(gameghost.__version__, "1.7.2")
-        self.assertEqual(get_current_version(), "1.7.2")
+    def test_version_v1_7_3(self):
+        """Verify release version is synchronized at v1.7.3."""
+        self.assertEqual(gameghost.__version__, "1.7.3")
+        self.assertEqual(get_current_version(), "1.7.3")
 
     def test_termux_display_environment_detection(self):
         """Verify Termux-X11 display variable logic."""
