@@ -134,6 +134,7 @@ class GameGhostViewer:
         self,
         host_ip: str,
         port: int = 8900,
+        audio_port: int = 8901,
         fullscreen: bool = True,
         launch_game: Optional[str] = None,
         preset: str = "1080p",
@@ -147,7 +148,9 @@ class GameGhostViewer:
     ):
         self.host_ip = host_ip
         self.port = port
+        self.audio_port = audio_port
         self.uri = f"ws://{host_ip}:{port}"
+        self.audio_uri = f"ws://{host_ip}:{audio_port}"
         self.fullscreen = fullscreen
         self.launch_game = launch_game
         self.running = False
@@ -164,6 +167,9 @@ class GameGhostViewer:
         self.max_fps = max_fps
         self.auto_fps = auto_fps
 
+        self.audio_muted = False
+        self.settings_open = False
+
         self.win_w = 1280
         self.win_h = 720
         self.frame_queue = queue.Queue(maxsize=2)
@@ -174,21 +180,21 @@ class GameGhostViewer:
         self.frame_count = 0
         self.last_fps_time = time.time()
         self.show_overlay = True
-        self.show_quick_bar = True
         self.notification_msg = ""
         self.notification_time = 0.0
 
         # Physical Joysticks / Hardware Controllers (Bluetooth, USB OTG, Kishi, Backbone)
         self.joysticks: Dict[int, pygame.joystick.Joystick] = {}
 
-        # Multi-touch tracking: finger_id -> {"target": "left_stick|right_stick|button|chip", "data": ...}
+        # Multi-touch tracking: finger_id -> {"target": "left_stick|right_stick|button", "data": ...}
         self.active_touches: Dict[int, Dict[str, Any]] = {}
 
         # Touch Layout geometry
         self.left_stick = {"base_x": 0, "base_y": 0, "knob_x": 0, "knob_y": 0, "radius": 75, "val_x": 0.0, "val_y": 0.0}
         self.right_stick = {"base_x": 0, "base_y": 0, "knob_x": 0, "knob_y": 0, "radius": 75, "val_x": 0.0, "val_y": 0.0}
         self.buttons: Dict[str, Dict[str, Any]] = {}
-        self.quick_chips: Dict[str, Dict[str, Any]] = {}
+        self.settings_btn = pygame.Rect(0, 0, 0, 0)
+        self.settings_modal: Dict[str, Any] = {}
 
     def notify(self, message: str, duration: float = 2.5):
         """Show temporary on-screen HUD notification."""
@@ -284,44 +290,64 @@ class GameGhostViewer:
             "START":  {"x": int(w * 0.61), "y": int(h * 0.08), "r": int(btn_r * 0.65), "type": "btn", "name": "START", "color": (190, 200, 210), "label": sys_labels["START"]},
         }
 
-        # Quick Settings Touch Bar Chips (Top Center Collapsible Bar)
-        chip_w = int(w * 0.082)
-        chip_h = int(h * 0.046)
-        chip_y = int(h * 0.015)
-        total_w = chip_w * 5 + int(w * 0.04)
-        start_chip_x = (w - total_w) // 2
+        # Playful Interactive Settings Button (Top Right)
+        s_btn_w = max(110, int(w * 0.095))
+        s_btn_h = max(32, int(h * 0.052))
+        self.settings_btn = pygame.Rect(w - s_btn_w - int(w * 0.02), int(h * 0.02), s_btn_w, s_btn_h)
 
-        self.quick_chips = {
-            "layout": {
-                "rect": pygame.Rect(start_chip_x, chip_y, chip_w, chip_h),
-                "label": f"[PAD] {self.controller_theme[:2].upper()}",
-                "action": "toggle_layout",
-                "tooltip": "Layout: PS / Xbox"
-            },
-            "preset": {
-                "rect": pygame.Rect(start_chip_x + int(chip_w * 1.08), chip_y, chip_w, chip_h),
-                "label": f"[RES] {self.preset.upper()}",
-                "action": "cycle_preset",
-                "tooltip": "Quality: 720p/1080p/2K/4K"
-            },
-            "fps": {
-                "rect": pygame.Rect(start_chip_x + int(chip_w * 2.16), chip_y, chip_w, chip_h),
-                "label": f"[FPS] {'AUTO' if self.auto_fps else f'{self.target_fps}F'}",
-                "action": "cycle_fps",
-                "tooltip": "Max FPS & Auto-FPS"
-            },
-            "theme": {
-                "rect": pygame.Rect(start_chip_x + int(chip_w * 3.24), chip_y, chip_w, chip_h),
-                "label": f"[THM] {self.overlay_theme[:3].upper()}",
-                "action": "cycle_theme",
-                "tooltip": "Color Border Theme"
-            },
-            "view": {
-                "rect": pygame.Rect(start_chip_x + int(chip_w * 4.32), chip_y, chip_w, chip_h),
-                "label": f"[VIEW] {self.visibility_mode[:3].upper()}",
-                "action": "cycle_visibility",
-                "tooltip": "Overlay Visibility"
-            },
+        # Settings Drawer / Modal Dialog (Centered Landscape Panel)
+        modal_w = min(int(w * 0.72), 680)
+        modal_h = min(int(h * 0.88), 460)
+        modal_x = (w - modal_w) // 2
+        modal_y = (h - modal_h) // 2
+        self.modal_rect = pygame.Rect(modal_x, modal_y, modal_w, modal_h)
+
+        pad_x = int(modal_w * 0.05)
+        content_w = modal_w - pad_x * 2
+        col_w = (content_w - 16) // 2
+        row_h = max(32, int(modal_h * 0.095))
+
+        # Row 1: Controller Layout & Quality Preset
+        r1_y = modal_y + 50
+        btn_layout = pygame.Rect(modal_x + pad_x, r1_y, col_w, row_h)
+        btn_preset = pygame.Rect(modal_x + pad_x + col_w + 16, r1_y, col_w, row_h)
+
+        # Row 2: Target FPS & Overlay Theme
+        r2_y = r1_y + row_h + 10
+        btn_fps = pygame.Rect(modal_x + pad_x, r2_y, col_w, row_h)
+        btn_theme = pygame.Rect(modal_x + pad_x + col_w + 16, r2_y, col_w, row_h)
+
+        # Row 3: HUD Visibility & Audio Stream Mute
+        r3_y = r2_y + row_h + 10
+        btn_view = pygame.Rect(modal_x + pad_x, r3_y, col_w, row_h)
+        btn_audio = pygame.Rect(modal_x + pad_x + col_w + 16, r3_y, col_w, row_h)
+
+        # Row 4: Game Quick Launchers
+        r4_y = r3_y + row_h + 38
+        catalog_games = ["dmc5", "sekiro", "tekken8", "mk11", "mgr", "rottr"]
+        game_btn_w = (content_w - (len(catalog_games) - 1) * 8) // len(catalog_games)
+        game_btns = {}
+        for idx, gid in enumerate(catalog_games):
+            gx = modal_x + pad_x + idx * (game_btn_w + 8)
+            game_btns[gid] = pygame.Rect(gx, r4_y, game_btn_w, max(28, int(row_h * 0.9)))
+
+        # Row 5: Close / Resume button
+        btn_close = pygame.Rect(modal_x + pad_x, modal_y + modal_h - row_h - 16, content_w, row_h)
+
+        # Top close 'X' button
+        btn_x_close = pygame.Rect(modal_x + modal_w - 38, modal_y + 12, 26, 26)
+
+        self.settings_modal = {
+            "rect": self.modal_rect,
+            "layout": btn_layout,
+            "preset": btn_preset,
+            "fps": btn_fps,
+            "theme": btn_theme,
+            "view": btn_view,
+            "audio": btn_audio,
+            "games": game_btns,
+            "close": btn_close,
+            "x_close": btn_x_close
         }
 
     def toggle_layout(self):
@@ -386,6 +412,14 @@ class GameGhostViewer:
         self._update_layout()
         self.notify(f"Overlay Visibility: {self.visibility_mode.upper()}")
 
+    def toggle_audio(self):
+        self.audio_muted = not self.audio_muted
+        state = "MUTED" if self.audio_muted else "ACTIVE (44.1kHz)"
+        self.notify(f"Audio Stream: {state}")
+
+    def toggle_settings(self):
+        self.settings_open = not self.settings_open
+
     def send_input(self, packet: dict):
         """Queue input packet for delivery to host PC with overflow protection."""
         if not self.connected:
@@ -426,6 +460,7 @@ class GameGhostViewer:
                                 console.print(f"[bold green][FOUND][/bold green] Detected GameGhost PC host online at: {new_ip}")
                                 self.host_ip = new_ip
                                 self.uri = f"ws://{new_ip}:{self.port}"
+                                self.audio_uri = f"ws://{new_ip}:{self.audio_port}"
                                 save_last_host(new_ip)
                         except Exception:
                             pass
@@ -551,24 +586,96 @@ class GameGhostViewer:
         asyncio.set_event_loop(loop)
         loop.run_until_complete(_client_loop())
 
+    def _audio_thread(self):
+        """
+        Background worker receiving and playing system audio stream over WebSocket.
+        Uses low-latency PCM playback through pygame.mixer.
+        """
+        try:
+            if not pygame.mixer.get_init():
+                pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=1024)
+            pygame.mixer.set_num_channels(32)
+        except Exception as ex:
+            console.print(f"[bold yellow][AUDIO][/bold yellow] Audio mixer initialization: {ex}")
+
+        async def _audio_loop():
+            while self.running:
+                try:
+                    async with websockets.connect(
+                        self.audio_uri,
+                        max_size=2 * 1024 * 1024,
+                        ping_interval=15,
+                        ping_timeout=15,
+                        open_timeout=3.0,
+                        close_timeout=3.0
+                    ) as ws:
+                        console.print(f"[bold green][AUDIO CONNECTED][/bold green] Audio stream active: {self.audio_uri}")
+                        while self.running:
+                            try:
+                                msg = await ws.recv()
+                                if isinstance(msg, bytes) and not self.audio_muted:
+                                    try:
+                                        ch = pygame.mixer.find_channel(True)
+                                        if ch:
+                                            ch.play(pygame.mixer.Sound(buffer=msg))
+                                    except Exception:
+                                        pass
+                            except (websockets.ConnectionClosed, asyncio.CancelledError):
+                                break
+                            except Exception:
+                                break
+                except Exception:
+                    pass
+                if self.running:
+                    await asyncio.sleep(2.0)
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(_audio_loop())
+
     def _handle_touch_down(self, finger_id: int, px: float, py: float):
         """Process touch down event at screen coordinates (px, py)."""
-        # 0. Check Quick Settings Bar Chips
-        if self.show_quick_bar:
-            for chip_key, cinfo in self.quick_chips.items():
-                if cinfo["rect"].collidepoint(px, py):
-                    action = cinfo["action"]
-                    if action == "toggle_layout":
-                        self.toggle_layout()
-                    elif action == "cycle_preset":
-                        self.cycle_preset()
-                    elif action == "cycle_fps":
-                        self.cycle_fps()
-                    elif action == "cycle_theme":
-                        self.cycle_theme()
-                    elif action == "cycle_visibility":
-                        self.cycle_visibility()
+        # If settings drawer is open, check modal clicks
+        if self.settings_open:
+            sm = self.settings_modal
+            if not sm:
+                return
+
+            if sm["close"].collidepoint(px, py) or sm["x_close"].collidepoint(px, py):
+                self.settings_open = False
+                return
+            if sm["layout"].collidepoint(px, py):
+                self.toggle_layout()
+                return
+            if sm["preset"].collidepoint(px, py):
+                self.cycle_preset()
+                return
+            if sm["fps"].collidepoint(px, py):
+                self.cycle_fps()
+                return
+            if sm["theme"].collidepoint(px, py):
+                self.cycle_theme()
+                return
+            if sm["view"].collidepoint(px, py):
+                self.cycle_visibility()
+                return
+            if sm["audio"].collidepoint(px, py):
+                self.toggle_audio()
+                return
+            for gid, rect in sm.get("games", {}).items():
+                if rect.collidepoint(px, py):
+                    self.send_input({"type": "launch", "game": gid})
+                    self.notify(f"Launching {gid.upper()} on PC...", duration=4.0)
                     return
+            # Tap outside modal closes it
+            if not sm["rect"].collidepoint(px, py):
+                self.settings_open = False
+            return
+
+        # Check Settings Button tap
+        if self.settings_btn.collidepoint(px, py):
+            self.settings_open = True
+            return
 
         # If visibility is hidden or off, do not consume touches as virtual buttons
         if self.visibility_mode in ("hidden", "off"):
@@ -610,6 +717,8 @@ class GameGhostViewer:
 
     def _handle_touch_motion(self, finger_id: int, px: float, py: float):
         """Process touch drag/motion for sticks."""
+        if self.settings_open:
+            return
         touch = self.active_touches.get(finger_id)
         if not touch:
             return
@@ -622,6 +731,8 @@ class GameGhostViewer:
 
     def _handle_touch_up(self, finger_id: int):
         """Process touch release."""
+        if self.settings_open:
+            return
         touch = self.active_touches.pop(finger_id, None)
         if not touch:
             return
@@ -767,7 +878,7 @@ class GameGhostViewer:
             surface.blit(lbl, (cx - lbl.get_width() // 2, curr_y))
             curr_y += 24
 
-    def _draw_hud(self, surface: pygame.Surface, font: pygame.font.Font, small_font: pygame.font.Font):
+    def _draw_hud(self, surface: pygame.Surface, font: pygame.font.Font, small_font: pygame.font.Font, big_font: pygame.font.Font):
         theme_cfg = THEME_PRESETS.get(self.overlay_theme, THEME_PRESETS["cyan"])
         accent = theme_cfg["accent"]
 
@@ -776,19 +887,16 @@ class GameGhostViewer:
 
         overlay = pygame.Surface((self.win_w, self.win_h), pygame.SRCALPHA)
 
-        # 1. Quick Settings Bar at Top Center
-        if self.show_quick_bar:
-            for chip_key, cinfo in self.quick_chips.items():
-                r = cinfo["rect"]
-                # Chip background pill
-                pygame.draw.rect(overlay, (20, 26, 38, 200), r, border_radius=6)
-                pygame.draw.rect(overlay, (accent[0], accent[1], accent[2], 180), r, width=1, border_radius=6)
+        # 1. Sleek Playful [SETTINGS] Button at Top Right (when settings modal is closed)
+        if not self.settings_open:
+            sb = self.settings_btn
+            pygame.draw.rect(overlay, (18, 24, 36, 210), sb, border_radius=6)
+            pygame.draw.rect(overlay, (accent[0], accent[1], accent[2], 200), sb, width=1, border_radius=6)
+            s_lbl = small_font.render("[SETTINGS]", True, (240, 245, 255))
+            overlay.blit(s_lbl, (sb.centerx - s_lbl.get_width() // 2, sb.centery - s_lbl.get_height() // 2))
 
-                lbl = small_font.render(cinfo["label"], True, (240, 245, 255))
-                overlay.blit(lbl, (r.centerx - lbl.get_width() // 2, r.centery - lbl.get_height() // 2))
-
-        # 2. Virtual Gamepad On-Screen Controls
-        if self.show_overlay and self.visibility_mode not in ("hidden", "off"):
+        # 2. Virtual Gamepad On-Screen Controls (only if settings modal is closed)
+        if not self.settings_open and self.show_overlay and self.visibility_mode not in ("hidden", "off"):
             # Draw Left Stick
             ls = self.left_stick
             base_col = theme_cfg["stick_base"]
@@ -819,19 +927,85 @@ class GameGhostViewer:
                 lbl = font.render(binfo["label"], True, (255, 255, 255))
                 overlay.blit(lbl, (bx - lbl.get_width() // 2, by - lbl.get_height() // 2))
 
-        # 3. Status HUD Bar (Top Left)
-        if self.connected:
-            status_color = (0, 230, 118)
-            fps_tag = f"FPS: {self.fps}/{self.target_fps}{' (AUTO)' if self.auto_fps else ''}"
-            status_text = f"GAMEGHOST // {fps_tag} | {self.preset.upper()} | {self.controller_theme.upper()} | PING: {self.latency_ms}ms"
-        else:
-            status_color = (255, 185, 0)
-            status_text = f"GAMEGHOST // LOOKING FOR INPUTS FROM PC ({self.host_ip}:{self.port})..."
+        # 3. Status HUD Bar (Top Left) (only if settings modal is closed)
+        if not self.settings_open:
+            if self.connected:
+                status_color = (0, 230, 118)
+                fps_tag = f"FPS: {self.fps}/{self.target_fps}{' (AUTO)' if self.auto_fps else ''}"
+                audio_tag = "MUTED" if self.audio_muted else "AUDIO ON"
+                status_text = f"GAMEGHOST // {fps_tag} | {self.preset.upper()} | {self.controller_theme.upper()} | {audio_tag} | PING: {self.latency_ms}ms"
+            else:
+                status_color = (255, 185, 0)
+                status_text = f"GAMEGHOST // LOOKING FOR INPUTS FROM PC ({self.host_ip}:{self.port})..."
 
-        lbl_status = font.render(status_text, True, status_color)
-        overlay.blit(lbl_status, (25, 20))
+            lbl_status = font.render(status_text, True, status_color)
+            overlay.blit(lbl_status, (25, 20))
 
-        # 4. Temporary Notification Banner (Center bottom)
+        # 4. Interactive Settings Modal Drawer
+        if self.settings_open:
+            sm = self.settings_modal
+            m_rect = sm["rect"]
+
+            # Darkened backdrop
+            overlay.fill((6, 10, 18, 220))
+
+            # Modal card body
+            pygame.draw.rect(overlay, (15, 20, 32, 250), m_rect, border_radius=12)
+            pygame.draw.rect(overlay, (accent[0], accent[1], accent[2], 220), m_rect, width=2, border_radius=12)
+
+            # Header Title
+            title_lbl = big_font.render("GAMEGHOST CONTROL CENTER", True, accent)
+            overlay.blit(title_lbl, (m_rect.centerx - title_lbl.get_width() // 2, m_rect.y + 16))
+
+            # Close 'X' button
+            xb = sm["x_close"]
+            pygame.draw.rect(overlay, (40, 25, 30, 220), xb, border_radius=4)
+            pygame.draw.rect(overlay, (255, 90, 90), xb, width=1, border_radius=4)
+            x_lbl = font.render("X", True, (255, 120, 120))
+            overlay.blit(x_lbl, (xb.centerx - x_lbl.get_width() // 2, xb.centery - x_lbl.get_height() // 2))
+
+            # Helper to draw interactive setting button
+            def _draw_opt_btn(rect, label, val_text, active_accent=False):
+                col_bg = (24, 32, 48, 230)
+                col_border = (accent[0], accent[1], accent[2], 180) if active_accent else (90, 110, 140, 160)
+                pygame.draw.rect(overlay, col_bg, rect, border_radius=6)
+                pygame.draw.rect(overlay, col_border, rect, width=1, border_radius=6)
+                t_lbl = small_font.render(f"{label}: {val_text}", True, (240, 245, 255))
+                overlay.blit(t_lbl, (rect.centerx - t_lbl.get_width() // 2, rect.centery - t_lbl.get_height() // 2))
+
+            _draw_opt_btn(sm["layout"], "PAD LAYOUT", self.controller_theme.upper(), True)
+            _draw_opt_btn(sm["preset"], "QUALITY", self.preset.upper(), True)
+            _draw_opt_btn(sm["fps"], "FPS ENGINE", "AUTO" if self.auto_fps else f"{self.target_fps} FPS", True)
+            _draw_opt_btn(sm["theme"], "COLOR THEME", self.overlay_theme.upper(), True)
+            _draw_opt_btn(sm["view"], "HUD OVERLAY", self.visibility_mode.upper(), True)
+            _draw_opt_btn(sm["audio"], "AUDIO STREAM", "MUTED" if self.audio_muted else "ACTIVE (44.1kHz)", not self.audio_muted)
+
+            # Game Quick Launchers Header
+            q_lbl = small_font.render("REMOTE LAUNCH GAME ON PC:", True, (160, 185, 210))
+            overlay.blit(q_lbl, (m_rect.x + int(m_rect.width * 0.05), sm["games"]["dmc5"].y - 20))
+
+            game_names = {
+                "dmc5": "DMC 5",
+                "sekiro": "SEKIRO",
+                "tekken8": "TEKKEN 8",
+                "mk11": "MK 11",
+                "mgr": "MGR",
+                "rottr": "ROTTR"
+            }
+            for gid, gr in sm["games"].items():
+                pygame.draw.rect(overlay, (20, 28, 42, 230), gr, border_radius=5)
+                pygame.draw.rect(overlay, (accent[0], accent[1], accent[2], 150), gr, width=1, border_radius=5)
+                g_lbl = small_font.render(game_names.get(gid, gid.upper()), True, (230, 240, 255))
+                overlay.blit(g_lbl, (gr.centerx - g_lbl.get_width() // 2, gr.centery - g_lbl.get_height() // 2))
+
+            # Bottom Close / Resume Button
+            cb = sm["close"]
+            pygame.draw.rect(overlay, (accent[0], accent[1], accent[2], 40), cb, border_radius=6)
+            pygame.draw.rect(overlay, accent, cb, width=1, border_radius=6)
+            c_lbl = font.render("[RESUME GAMEPLAY]", True, (255, 255, 255))
+            overlay.blit(c_lbl, (cb.centerx - c_lbl.get_width() // 2, cb.centery - c_lbl.get_height() // 2))
+
+        # 5. Temporary Notification Banner (Center bottom)
         if time.time() < self.notification_time and self.notification_msg:
             n_lbl = font.render(self.notification_msg, True, (255, 255, 255))
             n_box = pygame.Rect(self.win_w // 2 - n_lbl.get_width() // 2 - 16, self.win_h - 60, n_lbl.get_width() + 32, 34)
@@ -909,6 +1083,10 @@ class GameGhostViewer:
         # Start network worker thread
         t_net = threading.Thread(target=self._network_thread, daemon=True)
         t_net.start()
+
+        # Start audio playback worker thread
+        t_audio = threading.Thread(target=self._audio_thread, daemon=True)
+        t_audio.start()
 
         clock = pygame.time.Clock()
         current_game_surface: Optional[pygame.Surface] = None
@@ -996,6 +1174,13 @@ class GameGhostViewer:
                         except Exception:
                             pass
                         self._update_layout()
+                    elif event.key in (pygame.K_m, pygame.K_s):
+                        self.toggle_settings()
+                    elif event.key == pygame.K_ESCAPE:
+                        if self.settings_open:
+                            self.settings_open = False
+                        else:
+                            self.running = False
                     elif event.key == pygame.K_p:
                         self.toggle_layout()
                     elif event.key == pygame.K_q:
@@ -1006,24 +1191,22 @@ class GameGhostViewer:
                         self.cycle_theme()
                     elif event.key == pygame.K_v:
                         self.cycle_visibility()
-                    elif event.key == pygame.K_m:
-                        self.show_quick_bar = not self.show_quick_bar
                     elif event.key == pygame.K_h:
                         self.show_overlay = not self.show_overlay
-                    elif event.key == pygame.K_ESCAPE:
-                        self.running = False
-                    elif event.key in KEY_BTN_MAP:
+                    elif event.key in KEY_BTN_MAP and not self.settings_open:
                         bname = KEY_BTN_MAP[event.key]
                         self.send_input({"type": "btn", "name": bname, "val": 1})
-                    elif event.key in KEY_DPAD_MAP:
+                    elif event.key in KEY_DPAD_MAP and not self.settings_open:
                         dx, dy, dname = KEY_DPAD_MAP[event.key]
                         self.send_input({"type": "dpad", "dir": dname, "x": dx, "y": dy, "val": 1})
 
                 elif event.type == pygame.KEYUP:
-                    if event.key in KEY_BTN_MAP:
+                    if event.key in KEY_BTN_MAP and not self.settings_open:
                         bname = KEY_BTN_MAP[event.key]
                         self.send_input({"type": "btn", "name": bname, "val": 0})
-                    elif event.key in KEY_DPAD_MAP:
+                    elif event.key in KEY_DPAD_MAP and not self.settings_open:
+                        dx, dy, dname = KEY_DPAD_MAP[event.key]
+                        self.send_input({"type": "dpad", "dir": dname, "x": dx, "y": dy, "val": 0})
                         dx, dy, dname = KEY_DPAD_MAP[event.key]
                         self.send_input({"type": "dpad", "dir": dname, "x": dx, "y": dy, "val": 0})
 
@@ -1060,8 +1243,8 @@ class GameGhostViewer:
             else:
                 self._draw_standby_screen(screen, font, big_font)
 
-            # 4. Render On-Screen Gamepad Overlay & Quick Settings Bar
-            self._draw_hud(screen, font, small_font)
+            # 4. Render On-Screen Gamepad Overlay & Interactive Settings
+            self._draw_hud(screen, font, small_font, big_font)
 
             pygame.display.flip()
             # Dynamic frame rate limiter (up to 120 FPS when streaming)
@@ -1082,7 +1265,8 @@ def run_client(
     target_fps: int = 60,
     min_fps: int = 45,
     max_fps: int = 120,
-    auto_fps: bool = True
+    auto_fps: bool = True,
+    audio_port: Optional[int] = None
 ):
     """Entry point for native GameGhost handheld client in Landscape Mode."""
     if "DISPLAY" not in os.environ and os.path.exists("/data/data/com.termux/files"):
@@ -1097,6 +1281,7 @@ def run_client(
     min_fps = min_fps or cfg.get("min_fps", 45)
     max_fps = max_fps or cfg.get("max_fps", 120)
     auto_fps = auto_fps if auto_fps is not None else cfg.get("auto_fps", True)
+    audio_port = audio_port or cfg.get("audio_port", 8901)
 
     target_host = host_ip
     if not target_host:
@@ -1136,6 +1321,7 @@ def run_client(
     viewer = GameGhostViewer(
         host_ip=target_host,
         port=8900,
+        audio_port=audio_port,
         fullscreen=fullscreen,
         launch_game=launch_game,
         preset=preset,
