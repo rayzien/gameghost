@@ -495,6 +495,94 @@ def cmd_menu(args):
         console.print("[dim]Exited GameGhost menu.[/dim]")
 
 
+
+def cmd_logs(args):
+    """View or stream live GameGhost logs for PC host or phone client."""
+    from .config import HOST_LOG_FILE, CLIENT_LOG_FILE
+    target = CLIENT_LOG_FILE if getattr(args, "client", False) else HOST_LOG_FILE
+    name = "Client" if getattr(args, "client", False) else "Host"
+
+    if getattr(args, "clear", False):
+        if target.exists():
+            target.write_text("")
+            console.print(f"[bold green][OK] Cleared {name} log file ({target}).[/bold green]")
+        else:
+            console.print(f"[yellow]{name} log file does not exist yet.[/yellow]")
+        return
+
+    if not target.exists():
+        console.print(f"[yellow]No {name} log file found at {target}. Start the {name.lower()} first to generate logs.[/yellow]")
+        return
+
+    console.print(f"[bold cyan]=== GameGhost {name} Logs ({target}) ===[/bold cyan]")
+    lines_count = getattr(args, "lines", 50)
+
+    try:
+        with open(target, "r", encoding="utf-8", errors="replace") as f:
+            all_lines = f.readlines()
+            for line in all_lines[-lines_count:]:
+                print(line, end="")
+    except Exception as ex:
+        console.print(f"[bold red][ERR] Failed to read log file: {ex}[/bold red]")
+        return
+
+    if getattr(args, "follow", False):
+        console.print(f"[dim]--- Following {name} live logs (Ctrl+C to stop) ---[/dim]")
+        try:
+            with open(target, "r", encoding="utf-8", errors="replace") as f:
+                f.seek(0, 2)
+                while True:
+                    line = f.readline()
+                    if line:
+                        print(line, end="", flush=True)
+                    else:
+                        time.sleep(0.2)
+        except KeyboardInterrupt:
+            console.print("\n[dim]--- Stopped log follow ---[/dim]")
+
+
+def cmd_autostart(args):
+    """Configure GameGhost to automatically start on device boot."""
+    action = getattr(args, "action", "status")
+    on_phone = is_phone_environment()
+
+    if on_phone:
+        bashrc = Path.home() / ".bashrc"
+        hook = "# GameGhost Autostart Hook\nif [ -n \"$SSH_CONNECTION\" ] || [ -f ~/.termux_autostart_gg ]; then\n    gameghost client >/dev/null 2>&1 &\nfi\n"
+        if action == "enable":
+            Path.home().mkdir(parents=True, exist_ok=True)
+            marker = Path.home() / ".termux_autostart_gg"
+            marker.write_text("enabled\n")
+            content = bashrc.read_text(encoding="utf-8") if bashrc.exists() else ""
+            if "GameGhost Autostart Hook" not in content:
+                bashrc.write_text(content + "\n" + hook)
+            console.print("[bold green][OK] GameGhost phone autostart enabled.[/bold green]")
+            console.print("[dim]GameGhost will auto-connect in background when Termux launches.[/dim]")
+        elif action == "disable":
+            marker = Path.home() / ".termux_autostart_gg"
+            if marker.exists():
+                marker.unlink()
+            if bashrc.exists():
+                c = bashrc.read_text(encoding="utf-8")
+                c = c.replace(hook, "")
+                bashrc.write_text(c)
+            console.print("[yellow]GameGhost phone autostart disabled.[/yellow]")
+        else:
+            marker = Path.home() / ".termux_autostart_gg"
+            status = "[bold green]ENABLED[/bold green]" if marker.exists() else "[dim]DISABLED[/dim]"
+            console.print(f"GameGhost Termux Autostart: {status}")
+    else:
+        if action == "enable":
+            install_systemd_service()
+        elif action == "disable":
+            subprocess.run(["systemctl", "--user", "disable", "--now", "gameghost.service"], capture_output=True)
+            console.print("[yellow]GameGhost PC autostart service disabled.[/yellow]")
+        else:
+            res = subprocess.run(["systemctl", "--user", "is-enabled", "gameghost.service"], capture_output=True, text=True)
+            status = "[bold green]ENABLED[/bold green]" if res.returncode == 0 and "enabled" in res.stdout else "[dim]DISABLED[/dim]"
+            console.print(f"GameGhost PC Host Autostart: {status}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="GameGhost: Cast any PC game to your phone with full on-screen touch controls."
@@ -564,6 +652,17 @@ def main():
     # gamepad command
     subparsers.add_parser("gamepad", help="Test the virtual gamepad device")
 
+    # logs command
+    p_logs = subparsers.add_parser("logs", help="View or stream GameGhost live logs (host or client)")
+    p_logs.add_argument("--follow", "-f", action="store_true", help="Follow log output in real-time (like tail -f)")
+    p_logs.add_argument("--lines", "-n", type=int, default=50, help="Number of lines to display (default: 50)")
+    p_logs.add_argument("--client", "-c", action="store_true", help="Stream client logs instead of host logs")
+    p_logs.add_argument("--clear", action="store_true", help="Clear/truncate log file")
+
+    # autostart command
+    p_auto = subparsers.add_parser("autostart", help="Configure background autostart on system boot")
+    p_auto.add_argument("action", choices=["enable", "disable", "status"], default="status", nargs="?")
+
     # update command
     p_update = subparsers.add_parser("update", help="Check and apply latest updates from GitHub")
     p_update.add_argument("--force", "-f", action="store_true", help="Force overwrite local changes with upstream main")
@@ -608,6 +707,10 @@ def main():
         cmd_list(args)
     elif args.command == "gamepad":
         cmd_gamepad(args)
+    elif args.command == "logs":
+        cmd_logs(args)
+    elif args.command == "autostart":
+        cmd_autostart(args)
     elif args.command == "update":
         cmd_update(args)
     elif args.command == "menu":
