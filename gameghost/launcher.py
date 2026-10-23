@@ -1,5 +1,6 @@
 import os
 import sys
+import glob
 import subprocess
 import shutil
 from pathlib import Path
@@ -113,6 +114,12 @@ def launch_game(game_id: str = "dmc5") -> Optional[subprocess.Popen]:
         env = os.environ.copy()
         if "DISPLAY" not in env and os.path.exists("/tmp/.X11-unix/X0"):
             env["DISPLAY"] = ":0"
+        if "XAUTHORITY" not in env or not os.path.exists(env.get("XAUTHORITY", "")):
+            matches = glob.glob(f"/run/user/{os.getuid()}/.mutter-Xwaylandauth*")
+            if matches:
+                env["XAUTHORITY"] = matches[0]
+            elif os.path.exists(os.path.expanduser("~/.Xauthority")):
+                env["XAUTHORITY"] = os.path.expanduser("~/.Xauthority")
         return subprocess.Popen(
             cmd,
             cwd=game_dir,

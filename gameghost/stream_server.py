@@ -5,6 +5,8 @@ import json
 import glob
 import asyncio
 import threading
+import ctypes
+from ctypes import byref, c_uint, c_ulong, c_int, c_long, Structure, POINTER
 from typing import Set, Optional
 from PIL import Image, ImageDraw
 import websockets
@@ -15,6 +17,95 @@ from .launcher import launch_game, list_games
 from .config import load_config, QUALITY_PRESETS
 
 console = Console()
+
+
+class _XWindowAttributes(Structure):
+    _fields_ = [
+        ("x", c_int), ("y", c_int),
+        ("width", c_int), ("height", c_int),
+        ("border_width", c_int),
+        ("depth", c_int),
+        ("visual", ctypes.c_void_p),
+        ("root", c_ulong),
+        ("class", c_int),
+        ("bit_gravity", c_int),
+        ("win_gravity", c_int),
+        ("backing_store", c_int),
+        ("backing_planes", c_ulong),
+        ("backing_pixel", c_ulong),
+        ("save_under", c_int),
+        ("colormap", c_ulong),
+        ("map_installed", c_int),
+        ("map_state", c_int),
+        ("all_event_masks", c_long),
+        ("your_event_mask", c_long),
+        ("do_not_propagate_mask", c_long),
+        ("override_redirect", c_int),
+        ("screen", ctypes.c_void_p)
+    ]
+
+
+def _find_target_game_window():
+    try:
+        x11 = ctypes.cdll.LoadLibrary("libX11.so.6")
+        x11.XOpenDisplay.restype = ctypes.c_void_p
+        x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
+        x11.XDefaultRootWindow.restype = c_ulong
+        x11.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+        x11.XQueryTree.restype = c_int
+        x11.XQueryTree.argtypes = [ctypes.c_void_p, c_ulong, POINTER(c_ulong), POINTER(c_ulong), POINTER(POINTER(c_ulong)), POINTER(c_uint)]
+        x11.XFetchName.restype = c_int
+        x11.XFetchName.argtypes = [ctypes.c_void_p, c_ulong, POINTER(ctypes.c_char_p)]
+        x11.XGetWindowAttributes.restype = c_int
+        x11.XGetWindowAttributes.argtypes = [ctypes.c_void_p, c_ulong, POINTER(_XWindowAttributes)]
+        x11.XFree.restype = c_int
+        x11.XFree.argtypes = [ctypes.c_void_p]
+        x11.XCloseDisplay.restype = c_int
+        x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+
+        disp = x11.XOpenDisplay(None)
+        if not disp:
+            return None, 0, 0
+        root = x11.XDefaultRootWindow(disp)
+        root_ret = c_ulong()
+        parent_ret = c_ulong()
+        children = POINTER(c_ulong)()
+        nchildren = c_uint()
+
+        best_win = None
+        best_w, best_h = 0, 0
+
+        if x11.XQueryTree(disp, root, byref(root_ret), byref(parent_ret), byref(children), byref(nchildren)):
+            game_keywords = ["devil may cry", "dmc", "sekiro", "tekken", "mortal kombat", "metal gear", "tomb raider"]
+            for i in range(nchildren.value - 1, -1, -1):
+                wid = children[i]
+                attrs = _XWindowAttributes()
+                if x11.XGetWindowAttributes(disp, wid, byref(attrs)):
+                    if attrs.map_state == 2 and attrs.width >= 640 and attrs.height >= 480:
+                        name_ptr = ctypes.c_char_p()
+                        title = ""
+                        if x11.XFetchName(disp, wid, byref(name_ptr)) and name_ptr.value:
+                            title = name_ptr.value.decode("utf-8", "replace").lower()
+                            x11.XFree(name_ptr)
+
+                        if "guard window" in title or "desktop" in title:
+                            continue
+
+                        if any(k in title for k in game_keywords):
+                            best_win = wid
+                            best_w, best_h = attrs.width, attrs.height
+                            break
+
+                        if not best_win:
+                            best_win = wid
+                            best_w, best_h = attrs.width, attrs.height
+
+            if children:
+                x11.XFree(children)
+        x11.XCloseDisplay(disp)
+        return best_win, best_w, best_h
+    except Exception:
+        return None, 0, 0
 
 
 class GameStreamServer:
@@ -96,29 +187,32 @@ class GameStreamServer:
 
     def _capture_worker(self):
         """Dedicated thread continuously grabbing desktop frames at high FPS."""
-        # Ensure display and auth are available for screen capture
-        if "DISPLAY" not in os.environ and os.path.exists("/tmp/.X11-unix/X0"):
-            os.environ["DISPLAY"] = ":0"
-        if "XAUTHORITY" not in os.environ:
-            matches = glob.glob(f"/run/user/{os.getuid()}/.mutter-Xwaylandauth*")
-            if matches:
-                os.environ["XAUTHORITY"] = matches[0]
-            elif os.path.exists(os.path.expanduser("~/.Xauthority")):
-                os.environ["XAUTHORITY"] = os.path.expanduser("~/.Xauthority")
+        def _try_init_sct():
+            if "DISPLAY" not in os.environ and os.path.exists("/tmp/.X11-unix/X0"):
+                os.environ["DISPLAY"] = ":0"
+            if "XAUTHORITY" not in os.environ or not os.path.exists(os.environ.get("XAUTHORITY", "")):
+                matches = glob.glob(f"/run/user/{os.getuid()}/.mutter-Xwaylandauth*")
+                if matches:
+                    os.environ["XAUTHORITY"] = matches[0]
+                elif os.path.exists(os.path.expanduser("~/.Xauthority")):
+                    os.environ["XAUTHORITY"] = os.path.expanduser("~/.Xauthority")
+            try:
+                import mss
+                s = mss.mss()
+                m = s.monitors[1] if len(s.monitors) > 1 else s.monitors[0]
+                console.print(f"[bold green][STREAM] Display capture active ({m.get('width', 0)}x{m.get('height', 0)})[/bold green]")
+                return s, m
+            except Exception:
+                return None, None
 
-        sct = None
-        monitor = None
-        use_fallback = False
+        sct, monitor = _try_init_sct()
+        last_init_attempt = time.time()
+        current_target_win = None
+        last_win_check = 0
 
-        try:
-            import mss
-            sct = mss.mss()
-            monitor = sct.monitors[1] if len(sct.monitors) > 1 else sct.monitors[0]
-        except Exception as ex:
-            console.print(f"[STREAM] Display capture unavailable ({ex}). Activating standby game visualizer.")
-            use_fallback = True
+        if not sct:
+            console.print("[STREAM] Display capture not immediately ready. Activating standby game visualizer until display connects.")
 
-        target_delay = 1.0 / max(self.min_fps, self.fps)
         frame_count = 0
         last_fps_time = time.time()
         fps_adjust_interval = 0
@@ -127,7 +221,24 @@ class GameStreamServer:
             t0 = time.time()
             jpeg_bytes = None
 
-            if not use_fallback and sct and monitor:
+            if sct is None or monitor is None:
+                if t0 - last_init_attempt >= 1.5:
+                    last_init_attempt = t0
+                    sct, monitor = _try_init_sct()
+                    current_target_win = None
+
+            # Periodically scan for active game window to grab directly on Xwayland/X11
+            if sct and (t0 - last_win_check >= 1.5 or current_target_win is None):
+                last_win_check = t0
+                twin, tw, th = _find_target_game_window()
+                if twin and twin != current_target_win:
+                    current_target_win = twin
+                    if hasattr(sct, "_impl") and hasattr(sct._impl, "root") and hasattr(sct._impl.root, "value"):
+                        sct._impl.root.value = twin
+                        monitor = {"left": 0, "top": 0, "width": tw, "height": th}
+                        console.print(f"[bold green][STREAM] Direct capture attached to game window {hex(twin)} ({tw}x{th})[/bold green]")
+
+            if sct and monitor:
                 try:
                     raw = sct.grab(monitor)
                     img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
@@ -140,10 +251,17 @@ class GameStreamServer:
                     buf = io.BytesIO()
                     img.save(buf, format="JPEG", quality=self.quality, optimize=False)
                     jpeg_bytes = buf.getvalue()
-                except Exception:
-                    use_fallback = True
+                except Exception as ex:
+                    try:
+                        sct.close()
+                    except Exception:
+                        pass
+                    sct = None
+                    monitor = None
+                    current_target_win = None
+                    last_init_attempt = t0
 
-            if use_fallback or not jpeg_bytes:
+            if not jpeg_bytes:
                 jpeg_bytes = self._render_standby_frame(t0)
 
             with self.frame_lock:
