@@ -1,3 +1,12 @@
+# GameGhost v1.7.0 — Base Cooler Worker
+
+> **High-Performance PC Gaming Handheld Cast & Controller Subsystem with Base Cooler Worker**  
+> *Created by rayzien & pheonix14*
+
+GameGhost v1.7.0 introduces the **Base Cooler Worker** system: an autonomous thermal management and dynamic stream throttling governor that prevents hardware overheating during long handheld gaming sessions, accompanied by a comprehensive library of 450 curated game profiles and Protocol v2.
+
+---
+
 # GameGhost
 
 > **High-Performance PC Gaming Handheld Cast & Touch Controller Subsystem**  
