@@ -630,8 +630,7 @@ class GameStreamServer:
                 pass
 
     async def _broadcast_loop(self):
-        """Asynchronously push the latest frame to connected phone clients."""
-        interval = 1.0 / max(1, self.fps)
+        """Asynchronously push the latest frame to connected phone clients with ultra-low latency."""
         last_sent_seq = 0
 
         while self.running:
@@ -648,7 +647,9 @@ class GameStreamServer:
                     except Exception:
                         pass
 
-            await asyncio.sleep(interval)
+                await asyncio.sleep(0.003)
+            else:
+                await asyncio.sleep(0.04)
 
     async def handler(self, websocket):
         """Handle incoming client WebSocket connection and phone gamepad events."""

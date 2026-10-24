@@ -1,3 +1,40 @@
+# GameGhost v1.10.0 (v10) — Native Handheld Cast, In-App Live FPS HUD & Ultra-Low Latency
+
+> **High-Performance PC Gaming Handheld Cast & Universal Controller Subsystem**  
+> *Created by rayzien & pheonix14*  
+> *Direct hardware streaming and wireless gamepad subsystem for mobile handheld gaming.*
+
+## Verified Live Telemetry & Handheld Screen Captures
+
+| GameGhost v10 Live Stream (Landscape 2340x1080) | GameGhost Streaming Viewport |
+| :---: | :---: |
+| ![GameGhost v10 Live Stream](docs/screenshots/phone_live_v10.png) | ![GameGhost Streaming Viewport](docs/screenshots/phone_live_v9.png) |
+
+### What is New in v10 (v1.10.0)
+
+1. **In-App Live FPS Counter & Performance HUD**:
+   - Live hardware-synchronized FPS badge directly embedded inside the on-screen streaming overlay.
+   - Real-time video telemetry delivering 85-90+ FPS and up to 24+ MB/s bitrate with 3ms broadcast polling.
+
+2. **Ultra-Low-Latency Delivery Pipeline & Button Accuracy**:
+   - Replaced fixed-rate sleeps with 3ms high-frequency non-blocking polling loops, slashing frame delivery latency.
+   - Standardized full PlayStation and Xbox button mapping aliases (`TRI`, `CIR`, `X`, `SQR`, `CROSS`, `CIRCLE`, `SQUARE`, `TRIANGLE`) mapped directly to hardware virtual gamepad events via `uinput`.
+   - Native touch coordinate projection directly to PC screen cursor and buttons.
+
+3. **Isolated System Audio Streaming**:
+   - Hardware PipeWire / PulseAudio monitor capture linking automatically to Speaker sink monitors and running games (Tekken 8, DMC5).
+   - Low-latency 44.1kHz 16-bit stereo PCM streaming with auto-reconnect recovery on phone network interruptions.
+
+4. **Monochromatic Tactical Handheld Client**:
+   - Zero emojis, clean typography, tactile hexagonal button clusters.
+   - Quick input switching: `PAD`, `MOUSE`, `KBD`, and `TOUCH`.
+   - Direct launch into landscape streaming with fast return via `DASH`.
+
+### Donation & Sponsorship
+- **Litecoin (LTC)**: `ltc1q08zgc7n6lgghfxtlure29mc8dye70r6ccq8gx0`
+
+---
+
 # GameGhost v7.6.0 — Termux-X11 Video Pipeline, Wayland ScreenCast & Display :1 Sync Release
 
 > **High-Performance PC Gaming Handheld Cast & Universal Controller Subsystem**  
