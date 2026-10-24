@@ -38,24 +38,21 @@ def _link_game_audio_source():
             else:
                 cur_src = s
 
-        # Find all game output ports (Wine, Polaris, Tekken, DMC5, etc.)
+        # Always link the speaker sink monitor as primary audio source
+        sink = _find_speaker_monitor()
+        subprocess.run(["pw-link", f"{sink}:monitor_FL", "pw-record:input_FL"], capture_output=True, timeout=0.5)
+        subprocess.run(["pw-link", f"{sink}:monitor_FR", "pw-record:input_FR"], capture_output=True, timeout=0.5)
+
+        # Find all game output ports (Wine, Polaris, Tekken, DMC5, etc.) and link them directly
         res_out = subprocess.run(["pw-link", "-o"], capture_output=True, text=True, timeout=1.0)
-        game_fl = None
-        game_fr = None
         for line in res_out.stdout.splitlines():
             line = line.strip()
             l_lower = line.lower()
             if any(k in l_lower for k in ("wine", "polaris", "tekken", "devil", "sekiro", "mk11", "mgr", "rottr")):
                 if "fl" in l_lower or "left" in l_lower or "playback_fl" in l_lower or "output_fl" in l_lower or "output_1" in l_lower:
-                    game_fl = line
+                    subprocess.run(["pw-link", line, "pw-record:input_FL"], capture_output=True, timeout=0.5)
                 elif "fr" in l_lower or "right" in l_lower or "playback_fr" in l_lower or "output_fr" in l_lower or "output_2" in l_lower:
-                    game_fr = line
-
-        # Link target game ports to pw-record if present
-        if game_fl:
-            subprocess.run(["pw-link", game_fl, "pw-record:input_FL"], capture_output=True, timeout=0.5)
-        if game_fr:
-            subprocess.run(["pw-link", game_fr, "pw-record:input_FR"], capture_output=True, timeout=0.5)
+                    subprocess.run(["pw-link", line, "pw-record:input_FR"], capture_output=True, timeout=0.5)
     except Exception:
         pass
 
@@ -64,7 +61,7 @@ def _get_capture_command() -> Optional[list]:
     """Find the best available low-latency system audio capture tool targeting speaker/game monitor."""
     sink = _find_speaker_monitor()
     if shutil.which("pw-record"):
-        return ["pw-record", "--target", sink, "--format", "s16", "--rate", "44100", "--channels", "2", "-"]
+        return ["pw-record", "--target", "0", "--format", "s16", "--rate", "44100", "--channels", "2", "-"]
     if shutil.which("parec"):
         return ["parec", "-d", f"{sink}.monitor", "--format=s16le", "--rate=44100", "--channels=2"]
     if shutil.which("ffmpeg"):
