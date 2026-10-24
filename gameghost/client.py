@@ -1231,13 +1231,17 @@ class GameGhostViewer:
         except Exception:
             self.win_w = 1280
             self.win_h = 720
+        # Termux-X11: if display reports portrait (taller than wide), force landscape swap
+        if self.win_h > self.win_w:
+            self.win_w, self.win_h = self.win_h, self.win_w
 
         is_termux = "TERMUX_VERSION" in os.environ or os.path.exists("/data/data/com.termux")
         flags = pygame.DOUBLEBUF | pygame.RESIZABLE
         if self.fullscreen and not is_termux:
             flags |= pygame.FULLSCREEN
         elif self.fullscreen and is_termux:
-            flags |= pygame.NOFRAME
+            # NOFRAME + FULLSCREEN combination needed for Termux-X11 to fill screen correctly
+            flags |= pygame.NOFRAME | pygame.FULLSCREEN
 
         screen = None
         try:
@@ -1253,6 +1257,15 @@ class GameGhostViewer:
         font = pygame.font.SysFont("monospace", 14, bold=True)
         small_font = pygame.font.SysFont("monospace", 11, bold=True)
         big_font = pygame.font.SysFont("monospace", 18, bold=True)
+
+        # Re-sync layout with actual screen dimensions after display creation
+        try:
+            actual_w, actual_h = screen.get_size()
+            if actual_w > 0 and actual_h > 0:
+                self.win_w = max(actual_w, actual_h)
+                self.win_h = min(actual_w, actual_h)
+        except Exception:
+            pass
 
         # Initialize physical joysticks / gamepads
         pygame.joystick.init()

@@ -261,17 +261,35 @@ class GameStreamServer:
     def _capture_worker(self):
         """Dedicated thread continuously grabbing desktop frames at high FPS."""
         def _try_init_sct():
-            if "DISPLAY" not in os.environ and os.path.exists("/tmp/.X11-unix/X0"):
-                os.environ["DISPLAY"] = ":0"
+            # Ensure correct DISPLAY for mss (checks both Linux and Termux X11 socket paths)
+            if "DISPLAY" not in os.environ:
+                for sock_path in [
+                    "/tmp/.X11-unix/X0",
+                    "/tmp/.X11-unix/X1",
+                    "/data/data/com.termux/files/usr/tmp/.X11-unix/X0",
+                    f"{os.environ.get('PREFIX', '/data/data/com.termux/files/usr')}/tmp/.X11-unix/X0",
+                ]:
+                    if os.path.exists(sock_path):
+                        num = sock_path.rstrip("0123456789")[-1:] or "0"
+                        os.environ["DISPLAY"] = f":{sock_path[-1]}"
+                        break
+                else:
+                    os.environ.setdefault("DISPLAY", ":0")
+
             if "XAUTHORITY" not in os.environ or not os.path.exists(os.environ.get("XAUTHORITY", "")):
                 matches = glob.glob(f"/run/user/{os.getuid()}/.mutter-Xwaylandauth*")
                 if matches:
                     os.environ["XAUTHORITY"] = matches[0]
                 elif os.path.exists(os.path.expanduser("~/.Xauthority")):
                     os.environ["XAUTHORITY"] = os.path.expanduser("~/.Xauthority")
+
+            # CRITICAL: strip software rasterizer vars so mss can use real X11/Xlib
+            for _var in ("LIBGL_ALWAYS_SOFTWARE", "GALLIUM_DRIVER", "MESA_LOADER_DRIVER_OVERRIDE", "SDL_RENDER_DRIVER"):
+                os.environ.pop(_var, None)
+
             try:
                 import mss
-                s = mss.mss()
+                s = mss.MSS()
                 m = s.monitors[1] if len(s.monitors) > 1 else s.monitors[0]
                 console.print(f"[bold green][STREAM] Display capture active ({m.get('width', 0)}x{m.get('height', 0)})[/bold green]")
                 return s, m
@@ -315,7 +333,7 @@ class GameStreamServer:
             if sct and monitor:
                 try:
                     raw = sct.grab(monitor)
-                    img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
+                    img = Image.frombytes("RGB", (raw.width, raw.height), raw.bgra, "raw", "BGRX")
 
                     if self.scale != 1.0:
                         new_w = max(320, int(img.width * self.scale))

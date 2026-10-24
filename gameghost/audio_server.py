@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import json
 import queue
 import shutil
 import asyncio
@@ -16,13 +17,45 @@ console = Console()
 
 
 def _get_capture_command() -> Optional[list]:
-    """Find the best available low-latency system audio capture tool."""
+    """Find the best available low-latency system audio capture tool using monitor source."""
     if shutil.which("pw-record"):
-        return ["pw-record", "--target", "@DEFAULT_AUDIO_SINK@", "--format", "s16", "--rate", "44100", "--channels", "2", "-"]
+        # Use the monitor of the default audio sink (captures game/system audio output)
+        monitor_target = _find_speaker_monitor()
+        target = monitor_target if monitor_target else "@DEFAULT_AUDIO_SINK@.monitor"
+        return ["pw-record", "--target", target, "--format", "s16", "--rate", "44100", "--channels", "2", "-"]
     if shutil.which("parec"):
-        return ["parec", "--format=s16le", "--rate=44100", "--channels=2"]
+        return ["parec", "--device=@DEFAULT_MONITOR@", "--format=s16le", "--rate=44100", "--channels=2"]
     if shutil.which("ffmpeg"):
-        return ["ffmpeg", "-nostdin", "-loglevel", "quiet", "-f", "pulse", "-i", "default", "-f", "s16le", "-ar", "44100", "-ac", "2", "-"]
+        return ["ffmpeg", "-nostdin", "-loglevel", "quiet", "-f", "pulse", "-i", "default.monitor", "-f", "s16le", "-ar", "44100", "-ac", "2", "-"]
+    return None
+
+
+def _find_speaker_monitor() -> Optional[str]:
+    """Locate the PipeWire monitor node name for the default speaker sink."""
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["pw-dump"],
+            capture_output=True, text=True, timeout=3.0
+        )
+        if result.returncode != 0 or not result.stdout:
+            return None
+        import json
+        data = json.loads(result.stdout)
+        speaker_sink = None
+        for obj in data:
+            if "Node" not in obj.get("type", ""):
+                continue
+            props = obj.get("info", {}).get("props", {})
+            mc = props.get("media.class", "")
+            nn = props.get("node.name", "")
+            if mc == "Audio/Sink" and "Speaker" in nn:
+                speaker_sink = nn
+                break
+        if speaker_sink:
+            return f"{speaker_sink}.monitor"
+    except Exception:
+        pass
     return None
 
 
