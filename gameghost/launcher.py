@@ -121,8 +121,58 @@ def is_phone_environment() -> bool:
     return False
 
 
+def is_game_running(game_id: str) -> bool:
+    """Check if game process is currently running on host."""
+    normalized_id = GAME_ALIASES.get(game_id.lower().strip(), game_id.lower().strip())
+    info = GAMES_CATALOG.get(normalized_id)
+    if not info:
+        return False
+    exe = info.get("exe", "")
+    exe_name = os.path.basename(exe)
+    if not exe_name:
+        return False
+    try:
+        res = subprocess.run(["pgrep", "-f", exe_name], capture_output=True, text=True)
+        return res.returncode == 0 and len(res.stdout.strip()) > 0
+    except Exception:
+        return False
+
+
+def close_game(game_id: Optional[str] = None) -> bool:
+    """Cleanly close and terminate game process on host PC."""
+    targets = []
+    if game_id:
+        normalized_id = GAME_ALIASES.get(game_id.lower().strip(), game_id.lower().strip())
+        info = GAMES_CATALOG.get(normalized_id)
+        if info and "exe" in info:
+            targets.append(os.path.basename(info["exe"]))
+    else:
+        for info in GAMES_CATALOG.values():
+            if "exe" in info:
+                targets.append(os.path.basename(info["exe"]))
+
+    closed_any = False
+    for target in targets:
+        try:
+            res = subprocess.run(["pkill", "-15", "-f", target], capture_output=True)
+            if res.returncode == 0:
+                closed_any = True
+            time.sleep(0.3)
+            subprocess.run(["pkill", "-9", "-f", target], capture_output=True)
+        except Exception:
+            pass
+
+    try:
+        subprocess.run(["wineserver", "-k"], capture_output=True)
+    except Exception:
+        pass
+
+    log_host(f"Game close requested: '{game_id or 'all'}' (success={closed_any})")
+    return True
+
+
 def list_games() -> Dict[str, Dict[str, Any]]:
-    """Return available games with their installed status."""
+    """Return available games with their installed status and active running state."""
     catalog = {}
     on_phone = is_phone_environment()
 
@@ -131,6 +181,7 @@ def list_games() -> Dict[str, Dict[str, Any]]:
         if on_phone:
             c["installed"] = True
             c["remote"] = True
+            c["running"] = False
         else:
             installed = False
             if "exe" in info and os.path.exists(info["exe"]):
@@ -139,6 +190,7 @@ def list_games() -> Dict[str, Dict[str, Any]]:
                 installed = True
             c["installed"] = installed
             c["remote"] = False
+            c["running"] = is_game_running(gid)
         catalog[gid] = c
     return catalog
 
