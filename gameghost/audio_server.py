@@ -15,10 +15,57 @@ from .config import log_host
 console = Console()
 
 
+def _find_speaker_monitor() -> str:
+    """Find the exact PipeWire speaker sink or monitor target."""
+    return "alsa_output.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__Speaker__sink"
+
+
+def _link_game_audio_source():
+    """
+    Ensure pw-record is linked exclusively to the running game's audio output,
+    or the Speaker monitor sink, and never the microphone.
+    """
+    try:
+        # Find all game output ports (Wine, Polaris, Tekken, DMC5, etc.)
+        res_out = subprocess.run(["pw-link", "-o"], capture_output=True, text=True, timeout=1.0)
+        game_fl = None
+        game_fr = None
+        for line in res_out.stdout.splitlines():
+            line = line.strip()
+            l_lower = line.lower()
+            if any(k in l_lower for k in ("wine", "polaris", "tekken", "devil", "sekiro", "mk11", "mgr", "rottr")):
+                if "fl" in l_lower or "left" in l_lower or "playback_fl" in l_lower or "output_fl" in l_lower or "output_1" in l_lower:
+                    game_fl = line
+                elif "fr" in l_lower or "right" in l_lower or "playback_fr" in l_lower or "output_fr" in l_lower or "output_2" in l_lower:
+                    game_fr = line
+
+        # Fallback to speaker monitor
+        if not game_fl or not game_fr:
+            game_fl = "alsa_output.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__Speaker__sink:monitor_FL"
+            game_fr = "alsa_output.pci-0000_00_1f.3-platform-skl_hda_dsp_generic.HiFi__Speaker__sink:monitor_FR"
+
+        # Disconnect all microphone links to pw-record
+        res_links = subprocess.run(["pw-link", "-l"], capture_output=True, text=True, timeout=1.0)
+        for line in res_links.stdout.splitlines():
+            line_str = line.strip()
+            if "mic" in line_str.lower() and "pw-record" in line_str:
+                parts = line_str.split()
+                if len(parts) >= 3 and parts[1] == "|->":
+                    subprocess.run(["pw-link", "-d", parts[0], parts[2]], capture_output=True, timeout=0.5)
+
+        # Link target ports to pw-record
+        if game_fl:
+            subprocess.run(["pw-link", game_fl, "pw-record:input_FL"], capture_output=True, timeout=0.5)
+        if game_fr:
+            subprocess.run(["pw-link", game_fr, "pw-record:input_FR"], capture_output=True, timeout=0.5)
+    except Exception:
+        pass
+
+
 def _get_capture_command() -> Optional[list]:
     """Find the best available low-latency system audio capture tool."""
     if shutil.which("pw-record"):
-        return ["pw-record", "--target", "@DEFAULT_AUDIO_SINK@", "--format", "s16", "--rate", "44100", "--channels", "2", "-"]
+        return ["pw-record", "--format", "s16", "--rate", "44100", "--channels", "2", "-"]
     if shutil.which("parec"):
         return ["parec", "--format=s16le", "--rate=44100", "--channels=2"]
     if shutil.which("ffmpeg"):
@@ -66,6 +113,10 @@ class GameAudioServer:
                     stderr=subprocess.DEVNULL,
                     bufsize=4096
                 )
+                time.sleep(0.3)
+                _link_game_audio_source()
+
+                loop_count = 0
                 while not self.stop_event.is_set() and self.proc and self.proc.poll() is None:
                     data = self.proc.stdout.read(4096)
                     if not data:
@@ -77,6 +128,10 @@ class GameAudioServer:
                         except queue.Empty:
                             pass
                     self.audio_queue.put_nowait(data)
+
+                    loop_count += 1
+                    if loop_count % 50 == 0:
+                        _link_game_audio_source()
             except Exception as ex:
                 log_host(f"Audio capture worker exception: {ex}")
             finally:

@@ -121,8 +121,45 @@ def is_phone_environment() -> bool:
     return False
 
 
+def is_game_running(game_id_or_info: Any) -> bool:
+    """Check if a game's executable or process is currently active."""
+    patterns = []
+    if isinstance(game_id_or_info, dict):
+        info = game_id_or_info
+    else:
+        normalized_id = GAME_ALIASES.get(str(game_id_or_info).lower().strip(), str(game_id_or_info).lower().strip())
+        info = GAMES_CATALOG.get(normalized_id, {})
+
+    if "exe" in info and info["exe"]:
+        exe_path = Path(info["exe"])
+        patterns.append(exe_path.name.lower())
+        patterns.append(exe_path.stem.lower())
+    gid = info.get("id", "")
+    if gid:
+        patterns.append(gid.lower())
+
+    if not patterns:
+        return False
+
+    try:
+        for entry in os.listdir("/proc"):
+            if not entry.isdigit():
+                continue
+            try:
+                with open(f"/proc/{entry}/cmdline", "rb") as f:
+                    cmdline = f.read().decode("utf-8", errors="ignore").lower()
+                for p in patterns:
+                    if p and p in cmdline:
+                        return True
+            except (FileNotFoundError, PermissionError):
+                continue
+    except Exception:
+        pass
+    return False
+
+
 def list_games() -> Dict[str, Dict[str, Any]]:
-    """Return available games with their installed status."""
+    """Return available games with their installed and active running status."""
     catalog = {}
     on_phone = is_phone_environment()
 
@@ -131,6 +168,7 @@ def list_games() -> Dict[str, Dict[str, Any]]:
         if on_phone:
             c["installed"] = True
             c["remote"] = True
+            c["running"] = False
         else:
             installed = False
             if "exe" in info and os.path.exists(info["exe"]):
@@ -139,8 +177,62 @@ def list_games() -> Dict[str, Dict[str, Any]]:
                 installed = True
             c["installed"] = installed
             c["remote"] = False
+            c["running"] = is_game_running(info)
         catalog[gid] = c
     return catalog
+
+
+def close_game(game_id: Optional[str] = None) -> bool:
+    """Terminate a running game on the host, closing wine/game processes cleanly."""
+    killed_any = False
+    targets = []
+
+    if game_id:
+        normalized_id = GAME_ALIASES.get(game_id.lower().strip(), game_id.lower().strip())
+        info = GAMES_CATALOG.get(normalized_id)
+        if info:
+            targets.append(info)
+    else:
+        # Close any active running game from catalog
+        for info in GAMES_CATALOG.values():
+            if is_game_running(info):
+                targets.append(info)
+
+    for info in targets:
+        game_name = info.get("name", "Game")
+        patterns = []
+        if "exe" in info and info["exe"]:
+            exe_path = Path(info["exe"])
+            patterns.append(exe_path.name)
+            patterns.append(exe_path.stem)
+
+        for p in patterns:
+            try:
+                res = subprocess.run(["pkill", "-f", "-9", p], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if res.returncode == 0:
+                    killed_any = True
+            except Exception:
+                pass
+
+        print(f"[LAUNCHER] Terminated {game_name}.")
+        log_host(f"Terminated game process for {game_name}")
+
+    # If closing game or all games, also clean up wineserver if no other catalog game is running
+    any_other_running = any(is_game_running(g) for g in GAMES_CATALOG.values())
+    if not any_other_running:
+        try:
+            subprocess.run(["wineserver", "-k"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            killed_any = True
+        except Exception:
+            pass
+
+    # Unmute audio if muted
+    try:
+        subprocess.run(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "0"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+    return killed_any
 
 
 def launch_game(game_id: str = "dmc5", mute: bool = False) -> Optional[subprocess.Popen]:

@@ -13,7 +13,7 @@ import websockets
 from rich.console import Console
 
 from .gamepad import VirtualGamepad
-from .launcher import launch_game, list_games
+from .launcher import launch_game, list_games, close_game
 from .config import load_config, QUALITY_PRESETS, log_host
 
 console = Console()
@@ -647,6 +647,15 @@ class GameStreamServer:
         client_addr = getattr(websocket, "remote_address", "client")
         console.print(f"[bold green][PHONE CONNECTED][/bold green] Handheld connected from {client_addr}")
 
+        # Send current games list immediately upon connection
+        try:
+            await websocket.send(json.dumps({
+                "type": "games_list",
+                "games": list_games()
+            }))
+        except Exception:
+            pass
+
         try:
             async for message in websocket:
                 if isinstance(message, str):
@@ -654,7 +663,7 @@ class GameStreamServer:
                         data = json.loads(message)
                         msg_type = data.get("type")
 
-                        if msg_type in ("btn", "stick", "trigger", "dpad", "mouse_move", "mouse_btn", "mouse_scroll", "key"):
+                        if msg_type in ("btn", "stick", "trigger", "dpad", "mouse_move", "mouse_btn", "mouse_scroll", "mouse_pos", "touch", "touch_scroll", "key"):
                             self.gamepad.handle_packet(data)
 
                         elif msg_type == "launch":
@@ -666,6 +675,27 @@ class GameStreamServer:
                                 "type": "launch_ack",
                                 "game": game_id,
                                 "success": proc is not None
+                            }))
+                            # Broadcast updated games list
+                            websockets.broadcast(self.clients, json.dumps({
+                                "type": "games_list",
+                                "games": list_games()
+                            }))
+
+                        elif msg_type in ("close_game", "stop_game", "close"):
+                            game_id = data.get("game")
+                            console.print(f"[bold red][REMOTE CLOSE][/bold red] Phone requested closing: {game_id or 'active game'}")
+                            log_host(f"Client requested stop of game: {game_id or 'active game'}")
+                            killed = close_game(game_id)
+                            await websocket.send(json.dumps({
+                                "type": "close_ack",
+                                "game": game_id or "Active Game",
+                                "success": killed
+                            }))
+                            # Broadcast updated game list to all clients so UI updates instantly
+                            websockets.broadcast(self.clients, json.dumps({
+                                "type": "games_list",
+                                "games": list_games()
                             }))
 
                         elif msg_type == "list_games":

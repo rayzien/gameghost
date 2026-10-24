@@ -30,7 +30,20 @@ class VirtualGamepad:
         self.keyboard = KbdController() if HAS_PYNPUT else None
         self.mouse = MouseController() if HAS_PYNPUT else None
         self.mode = "gamepad"  # 'gamepad' or 'keyboard_fallback'
+        self.screen_w = 1920
+        self.screen_h = 1080
+        self._update_screen_size()
         self._init_device()
+
+    def _update_screen_size(self):
+        try:
+            import mss
+            with mss.mss() as s:
+                m = s.monitors[1] if len(s.monitors) > 1 else s.monitors[0]
+                self.screen_w = m.get("width", 1920)
+                self.screen_h = m.get("height", 1080)
+        except Exception:
+            pass
 
     def _init_device(self):
         if not HAS_EVDEV:
@@ -134,11 +147,38 @@ class VirtualGamepad:
                     else:
                         self.mouse.release(b_obj)
 
-            elif p_type == "mouse_scroll":
+            elif p_type == "mouse_scroll" or p_type == "touch_scroll":
                 dx = int(data.get("dx", 0))
                 dy = int(data.get("dy", 0))
                 if self.mouse:
                     self.mouse.scroll(dx, dy)
+
+            elif p_type == "mouse_pos":
+                nx = float(data.get("x", 0.0))
+                ny = float(data.get("y", 0.0))
+                tx = int(max(0.0, min(1.0, nx)) * self.screen_w)
+                ty = int(max(0.0, min(1.0, ny)) * self.screen_h)
+                if self.mouse:
+                    self.mouse.position = (tx, ty)
+
+            elif p_type == "touch":
+                # Experimental direct touch support: maps touch coordinates to PC screen
+                action = str(data.get("action", "")).lower()
+                nx = float(data.get("x", 0.0))
+                ny = float(data.get("y", 0.0))
+                tx = int(max(0.0, min(1.0, nx)) * self.screen_w)
+                ty = int(max(0.0, min(1.0, ny)) * self.screen_h)
+                fingers = int(data.get("fingers", 1))
+                b_obj = Button.right if fingers == 2 else Button.left
+
+                if self.mouse:
+                    self.mouse.position = (tx, ty)
+                    if action == "down":
+                        self.mouse.press(b_obj)
+                    elif action == "up":
+                        self.mouse.release(b_obj)
+                    elif action == "move":
+                        pass  # Position already updated
 
             elif p_type == "key":
                 kname = str(data.get("name", "")).lower()
