@@ -174,6 +174,8 @@ class GameAudioServer:
             log_host(f"Audio client disconnected (active: {len(self.clients)})")
 
     async def _capture_and_broadcast_loop(self):
+        last_audio_telemetry = time.time()
+        chunks_broadcasted = 0
         while self.running:
             if self.clients:
                 self._last_client_time = time.time()
@@ -183,8 +185,15 @@ class GameAudioServer:
                         chunk = self.audio_queue.get_nowait()
                         if chunk and self.clients:
                             websockets.broadcast(self.clients, chunk)
+                            chunks_broadcasted += 1
                 except Exception:
                     pass
+
+                now = time.time()
+                if now - last_audio_telemetry >= 4.0:
+                    last_audio_telemetry = now
+                    console.print(f"[bold magenta][AUDIO TELEMETRY][/bold magenta] Source: Isolated Game / Speaker Monitor | Rate: 44.1kHz Stereo PCM | Clients: {len(self.clients)} | Packets: {chunks_broadcasted}")
+                    log_host(f"[AUDIO TELEMETRY] Source=GameAudio/Speaker Rate=44.1kHz Stereo Clients={len(self.clients)} Packets={chunks_broadcasted}")
             else:
                 # If idle for more than 5 seconds without clients, stop capture
                 if time.time() - self._last_client_time > 5.0 and self.capture_thread:

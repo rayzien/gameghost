@@ -49,6 +49,42 @@ def wait_for_hotspot_ip(timeout: float = 30.0) -> str:
 
 
 QUALITY_PRESETS: Dict[str, Dict[str, Any]] = {
+    "smooth": {
+        "id": "smooth",
+        "name": "Smooth (Low Latency / 45 FPS / Weak Wi-Fi)",
+        "scale": 0.65,
+        "quality": 65,
+        "fps": 45,
+        "min_fps": 30,
+        "max_fps": 60,
+    },
+    "balanced": {
+        "id": "balanced",
+        "name": "Balanced (Recommended / 60 FPS / Crisp)",
+        "scale": 0.85,
+        "quality": 78,
+        "fps": 60,
+        "min_fps": 45,
+        "max_fps": 60,
+    },
+    "ultra": {
+        "id": "ultra",
+        "name": "Ultra (Maximum Quality / 1080p Native)",
+        "scale": 1.0,
+        "quality": 90,
+        "fps": 60,
+        "min_fps": 60,
+        "max_fps": 90,
+    },
+    "esports": {
+        "id": "esports",
+        "name": "Esports (Fast Response / 90 FPS / Ultra Low Lag)",
+        "scale": 0.70,
+        "quality": 60,
+        "fps": 90,
+        "min_fps": 60,
+        "max_fps": 120,
+    },
     "360p": {
         "id": "360p",
         "name": "360p Super Low Data (Cellular Hotspot)",
@@ -288,7 +324,16 @@ def is_host_running() -> bool:
             return True
         except (OSError, ProcessLookupError):
             clear_host_pid()
-            return False
+
+    # Also check if stream socket port 8900 is actively listening
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.15)
+            if s.connect_ex(("127.0.0.1", 8900)) == 0:
+                return True
+    except Exception:
+        pass
+
     return False
 
 
