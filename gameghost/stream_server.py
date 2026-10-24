@@ -62,28 +62,66 @@ class _XClientMessageEvent(Structure):
     ]
 
 
+# Global X11 setup with thread-safety and robust error handling
+try:
+    x11_lib = ctypes.cdll.LoadLibrary("libX11.so.6")
+    x11_lib.XInitThreads()
+    x11_lib.XOpenDisplay.restype = ctypes.c_void_p
+    x11_lib.XOpenDisplay.argtypes = [ctypes.c_char_p]
+    x11_lib.XCloseDisplay.restype = c_int
+    x11_lib.XCloseDisplay.argtypes = [ctypes.c_void_p]
+    x11_lib.XDefaultRootWindow.restype = c_ulong
+    x11_lib.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+    x11_lib.XInternAtom.restype = c_ulong
+    x11_lib.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, c_int]
+    x11_lib.XSendEvent.restype = c_int
+    x11_lib.XSendEvent.argtypes = [ctypes.c_void_p, c_ulong, c_int, c_long, ctypes.POINTER(_XClientMessageEvent)]
+    x11_lib.XFlush.restype = c_int
+    x11_lib.XFlush.argtypes = [ctypes.c_void_p]
+    x11_lib.XQueryTree.restype = c_int
+    x11_lib.XQueryTree.argtypes = [ctypes.c_void_p, c_ulong, POINTER(c_ulong), POINTER(c_ulong), POINTER(POINTER(c_ulong)), POINTER(c_uint)]
+    x11_lib.XFetchName.restype = c_int
+    x11_lib.XFetchName.argtypes = [ctypes.c_void_p, c_ulong, POINTER(ctypes.c_char_p)]
+    x11_lib.XGetClassHint.restype = c_int
+    x11_lib.XGetClassHint.argtypes = [ctypes.c_void_p, c_ulong, POINTER(_XClassHint)]
+    x11_lib.XGetWindowAttributes.restype = c_int
+    x11_lib.XGetWindowAttributes.argtypes = [ctypes.c_void_p, c_ulong, POINTER(_XWindowAttributes)]
+    x11_lib.XGetImage.restype = ctypes.c_void_p
+    x11_lib.XGetImage.argtypes = [ctypes.c_void_p, c_ulong, c_int, c_int, c_uint, c_uint, c_ulong, c_int]
+    x11_lib.XDestroyImage.restype = c_int
+    x11_lib.XDestroyImage.argtypes = [ctypes.c_void_p]
+    x11_lib.XFree.restype = c_int
+    x11_lib.XFree.argtypes = [ctypes.c_void_p]
+
+    _ErrorHandlerFunc = ctypes.CFUNCTYPE(c_int, ctypes.c_void_p, ctypes.c_void_p)
+    _GLOBAL_X_ERROR_HANDLER = _ErrorHandlerFunc(lambda d, e: 0)
+    x11_lib.XSetErrorHandler(_GLOBAL_X_ERROR_HANDLER)
+except Exception:
+    x11_lib = None
+
+
+class _XImage(Structure):
+    _fields_ = [
+        ("width", c_int), ("height", c_int),
+        ("xoffset", c_int), ("format", c_int),
+        ("data", ctypes.c_void_p),
+        ("byte_order", c_int), ("bitmap_unit", c_int),
+        ("bitmap_bit_order", c_int), ("bitmap_pad", c_int),
+        ("depth", c_int), ("bytes_per_line", c_int),
+        ("bits_per_pixel", c_int)
+    ]
+
+
 def _activate_game_window(win_id: int) -> bool:
     """Send _NET_ACTIVE_WINDOW to ensure the game is focused and rendered on the active workspace."""
+    if not x11_lib:
+        return False
     try:
-        x11 = ctypes.cdll.LoadLibrary("libX11.so.6")
-        x11.XOpenDisplay.restype = ctypes.c_void_p
-        x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
-        x11.XDefaultRootWindow.restype = c_ulong
-        x11.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
-        x11.XInternAtom.restype = c_ulong
-        x11.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, c_int]
-        x11.XSendEvent.restype = c_int
-        x11.XSendEvent.argtypes = [ctypes.c_void_p, c_ulong, c_int, c_long, ctypes.POINTER(_XClientMessageEvent)]
-        x11.XFlush.restype = c_int
-        x11.XFlush.argtypes = [ctypes.c_void_p]
-        x11.XCloseDisplay.restype = c_int
-        x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
-
-        disp = x11.XOpenDisplay(None)
+        disp = x11_lib.XOpenDisplay(None)
         if not disp:
             return False
-        root = x11.XDefaultRootWindow(disp)
-        atom_active = x11.XInternAtom(disp, b"_NET_ACTIVE_WINDOW", 0)
+        root = x11_lib.XDefaultRootWindow(disp)
+        atom_active = x11_lib.XInternAtom(disp, b"_NET_ACTIVE_WINDOW", 0)
         ev = _XClientMessageEvent()
         ev.type = 33  # ClientMessage
         ev.window = win_id
@@ -94,38 +132,22 @@ def _activate_game_window(win_id: int) -> bool:
         ev.data[2] = 0
         ev.data[3] = 0
         ev.data[4] = 0
-        x11.XSendEvent(disp, root, False, (1 << 19) | (1 << 20), byref(ev))
-        x11.XFlush(disp)
-        x11.XCloseDisplay(disp)
+        x11_lib.XSendEvent(disp, root, False, (1 << 19) | (1 << 20), byref(ev))
+        x11_lib.XFlush(disp)
+        x11_lib.XCloseDisplay(disp)
         return True
     except Exception:
         return False
 
 
 def _find_target_game_window():
+    if not x11_lib:
+        return None, 0, 0
     try:
-        x11 = ctypes.cdll.LoadLibrary("libX11.so.6")
-        x11.XOpenDisplay.restype = ctypes.c_void_p
-        x11.XOpenDisplay.argtypes = [ctypes.c_char_p]
-        x11.XDefaultRootWindow.restype = c_ulong
-        x11.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
-        x11.XQueryTree.restype = c_int
-        x11.XQueryTree.argtypes = [ctypes.c_void_p, c_ulong, POINTER(c_ulong), POINTER(c_ulong), POINTER(POINTER(c_ulong)), POINTER(c_uint)]
-        x11.XFetchName.restype = c_int
-        x11.XFetchName.argtypes = [ctypes.c_void_p, c_ulong, POINTER(ctypes.c_char_p)]
-        x11.XGetClassHint.restype = c_int
-        x11.XGetClassHint.argtypes = [ctypes.c_void_p, c_ulong, POINTER(_XClassHint)]
-        x11.XGetWindowAttributes.restype = c_int
-        x11.XGetWindowAttributes.argtypes = [ctypes.c_void_p, c_ulong, POINTER(_XWindowAttributes)]
-        x11.XFree.restype = c_int
-        x11.XFree.argtypes = [ctypes.c_void_p]
-        x11.XCloseDisplay.restype = c_int
-        x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
-
-        disp = x11.XOpenDisplay(None)
+        disp = x11_lib.XOpenDisplay(None)
         if not disp:
             return None, 0, 0
-        root = x11.XDefaultRootWindow(disp)
+        root = x11_lib.XDefaultRootWindow(disp)
         root_ret = c_ulong()
         parent_ret = c_ulong()
         children = POINTER(c_ulong)()
@@ -134,7 +156,7 @@ def _find_target_game_window():
         best_win = None
         best_w, best_h = 0, 0
 
-        if x11.XQueryTree(disp, root, byref(root_ret), byref(parent_ret), byref(children), byref(nchildren)):
+        if x11_lib.XQueryTree(disp, root, byref(root_ret), byref(parent_ret), byref(children), byref(nchildren)):
             game_keywords = [
                 "devil may cry", "dmc", "sekiro", "tekken", "polaris",
                 "mortal kombat", "mk11", "metal gear", "mgr", "tomb raider", "rottr"
@@ -146,23 +168,23 @@ def _find_target_game_window():
             for i in range(nchildren.value - 1, -1, -1):
                 wid = children[i]
                 attrs = _XWindowAttributes()
-                if x11.XGetWindowAttributes(disp, wid, byref(attrs)):
+                if x11_lib.XGetWindowAttributes(disp, wid, byref(attrs)):
                     if attrs.map_state == 2 and attrs.width >= 400 and attrs.height >= 300:
                         name_ptr = ctypes.c_char_p()
                         title = ""
-                        if x11.XFetchName(disp, wid, byref(name_ptr)) and name_ptr.value:
+                        if x11_lib.XFetchName(disp, wid, byref(name_ptr)) and name_ptr.value:
                             title = name_ptr.value.decode("utf-8", "replace").lower()
-                            x11.XFree(name_ptr)
+                            x11_lib.XFree(name_ptr)
 
                         hint = _XClassHint()
                         res_name, res_class = "", ""
-                        if x11.XGetClassHint(disp, wid, byref(hint)):
+                        if x11_lib.XGetClassHint(disp, wid, byref(hint)):
                             if hint.res_name:
                                 res_name = ctypes.string_at(hint.res_name).decode("utf-8", "replace").lower()
-                                x11.XFree(hint.res_name)
+                                x11_lib.XFree(hint.res_name)
                             if hint.res_class:
                                 res_class = ctypes.string_at(hint.res_class).decode("utf-8", "replace").lower()
-                                x11.XFree(hint.res_class)
+                                x11_lib.XFree(hint.res_class)
 
                         combined = f"{title} {res_name} {res_class}"
                         if any(ex in combined for ex in system_exclusions):
@@ -174,68 +196,44 @@ def _find_target_game_window():
                             break
 
             if children:
-                x11.XFree(children)
-        x11.XCloseDisplay(disp)
+                x11_lib.XFree(children)
+        x11_lib.XCloseDisplay(disp)
         return best_win, best_w, best_h
     except Exception:
         return None, 0, 0
 
 
-def _capture_x11_window(win_id: int, quality: int = 80, scale: float = 1.0) -> Optional[bytes]:
+def _capture_x11_window(disp, win_id: int, quality: int = 80, scale: float = 1.0) -> Optional[bytes]:
     """Direct hardware capture of an active X11 / Xwayland game window via XGetImage."""
+    if not x11_lib or not disp or not win_id:
+        return None
     try:
-        x11 = ctypes.cdll.LoadLibrary("libX11.so.6")
-        disp = x11.XOpenDisplay(None)
-        if not disp:
+        attrs = _XWindowAttributes()
+        if not x11_lib.XGetWindowAttributes(disp, win_id, byref(attrs)):
             return None
-        # Safe error handler to catch BadWindow on invalid / closed game windows
-        ErrorHandlerFunc = ctypes.CFUNCTYPE(c_int, ctypes.c_void_p, ctypes.c_void_p)
-        noop_handler = ErrorHandlerFunc(lambda d, e: 0)
-        old_handler = x11.XSetErrorHandler(noop_handler)
-        try:
-            attrs = _XWindowAttributes()
-            if not x11.XGetWindowAttributes(disp, win_id, byref(attrs)):
-                return None
-            w, h = attrs.width, attrs.height
-            if w < 100 or h < 100:
-                return None
+        w, h = attrs.width, attrs.height
+        if w < 100 or h < 100:
+            return None
 
-            x11.XGetImage.restype = ctypes.c_void_p
-            x11.XGetImage.argtypes = [ctypes.c_void_p, c_ulong, c_int, c_int, c_uint, c_uint, c_ulong, c_int]
-            x11.XDestroyImage.restype = c_int
-            x11.XDestroyImage.argtypes = [ctypes.c_void_p]
+        img_ptr = x11_lib.XGetImage(disp, win_id, 0, 0, w, h, 0xFFFFFFFF, 2)
+        if not img_ptr:
+            return None
 
-            img_ptr = x11.XGetImage(disp, win_id, 0, 0, w, h, 0xFFFFFFFF, 2)
-            if not img_ptr:
-                return None
+        ximage = _XImage.from_address(img_ptr)
+        raw_bytes = ctypes.string_at(ximage.data, ximage.bytes_per_line * h)
+        x11_lib.XDestroyImage(img_ptr)
 
-            class _XImage(Structure):
-                _fields_ = [
-                    ("width", c_int), ("height", c_int),
-                    ("xoffset", c_int), ("format", c_int),
-                    ("data", ctypes.c_void_p),
-                    ("byte_order", c_int), ("bitmap_unit", c_int),
-                    ("bitmap_bit_order", c_int), ("bitmap_pad", c_int),
-                    ("depth", c_int), ("bytes_per_line", c_int),
-                    ("bits_per_pixel", c_int)
-                ]
+        img = Image.frombytes("RGB", (w, h), raw_bytes, "raw", "BGRX")
+        if scale != 1.0:
+            new_w = max(320, int(w * scale))
+            new_h = max(240, int(h * scale))
+            img = img.resize((new_w, new_h), Image.NEAREST)
 
-            ximage = _XImage.from_address(img_ptr)
-            raw_bytes = ctypes.string_at(ximage.data, ximage.bytes_per_line * h)
-            x11.XDestroyImage(img_ptr)
-
-            img = Image.frombytes("RGB", (w, h), raw_bytes, "raw", "BGRX")
-            if scale != 1.0:
-                new_w = max(320, int(w * scale))
-                new_h = max(240, int(h * scale))
-                img = img.resize((new_w, new_h), Image.BILINEAR)
-
-            buf = io.BytesIO()
-            img.save(buf, format="JPEG", quality=quality, optimize=True)
-            return buf.getvalue()
-        finally:
-            x11.XSetErrorHandler(old_handler)
-            x11.XCloseDisplay(disp)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=quality, optimize=False)
+        return buf.getvalue()
+    except Exception:
+        return None
 
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=quality, optimize=False)
@@ -490,6 +488,13 @@ class GameStreamServer:
         last_win_check = 0
         last_wayland_frame_id = -1
 
+        x11_disp = None
+        if x11_lib:
+            try:
+                x11_disp = x11_lib.XOpenDisplay(None)
+            except Exception:
+                x11_disp = None
+
         if not sct and not (wayland_cap and wayland_cap.active):
             console.print("[STREAM] Display capture not immediately ready. Activating standby game visualizer until display connects.")
 
@@ -515,14 +520,29 @@ class GameStreamServer:
                 elif not twin and current_target_win is not None:
                     current_target_win = None
 
-            # 1. Desktop Mode: Hardware-accelerated Mutter ScreenCast capture (Wayland)
-            if wayland_cap and wayland_cap.active:
+            # 1. Primary: Direct Game Window Capture (ultra-low latency hardware capture via XGetImage)
+            if current_target_win:
+                if not x11_disp and x11_lib:
+                    try:
+                        x11_disp = x11_lib.XOpenDisplay(None)
+                    except Exception:
+                        x11_disp = None
+                if x11_disp:
+                    win_frame = _capture_x11_window(x11_disp, current_target_win, quality=self.quality, scale=self.scale)
+                    if win_frame:
+                        jpeg_bytes = win_frame
+                        current_source = f"Game Window ({hex(current_target_win)})"
+                    else:
+                        current_target_win = None
+
+            # 2. Desktop Mode: Hardware-accelerated Mutter ScreenCast capture (Wayland)
+            if not jpeg_bytes and wayland_cap and wayland_cap.active:
                 f_id, f_bytes = wayland_cap.get_latest_frame()
                 if f_bytes:
                     jpeg_bytes = f_bytes
                     current_source = "Wayland Desktop (Mutter + PipeWire)"
 
-            # 2. MSS Root Window Capture (X11 / Xwayland, safe without XGetImage SEGV)
+            # 3. MSS Root Window Capture (X11 / Xwayland, safe without XGetImage SEGV)
             if not jpeg_bytes:
                 if sct is None or monitor is None:
                     if t0 - last_init_attempt >= 2.0:
@@ -544,7 +564,7 @@ class GameStreamServer:
                             if self.scale != 1.0:
                                 new_w = max(320, int(img.width * self.scale))
                                 new_h = max(240, int(img.height * self.scale))
-                                img = img.resize((new_w, new_h), Image.BILINEAR)
+                                img = img.resize((new_w, new_h), Image.NEAREST)
 
                             buf = io.BytesIO()
                             img.save(buf, format="JPEG", quality=self.quality, optimize=False)
@@ -602,6 +622,12 @@ class GameStreamServer:
 
             if rem > 0.001:
                 time.sleep(rem)
+
+        if x11_disp and x11_lib:
+            try:
+                x11_lib.XCloseDisplay(x11_disp)
+            except Exception:
+                pass
 
     async def _broadcast_loop(self):
         """Asynchronously push the latest frame to connected phone clients."""
