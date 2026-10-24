@@ -188,46 +188,54 @@ def _capture_x11_window(win_id: int, quality: int = 80, scale: float = 1.0) -> O
         disp = x11.XOpenDisplay(None)
         if not disp:
             return None
-        attrs = _XWindowAttributes()
-        if not x11.XGetWindowAttributes(disp, win_id, byref(attrs)):
+        # Safe error handler to catch BadWindow on invalid / closed game windows
+        ErrorHandlerFunc = ctypes.CFUNCTYPE(c_int, ctypes.c_void_p, ctypes.c_void_p)
+        noop_handler = ErrorHandlerFunc(lambda d, e: 0)
+        old_handler = x11.XSetErrorHandler(noop_handler)
+        try:
+            attrs = _XWindowAttributes()
+            if not x11.XGetWindowAttributes(disp, win_id, byref(attrs)):
+                return None
+            w, h = attrs.width, attrs.height
+            if w < 100 or h < 100:
+                return None
+
+            x11.XGetImage.restype = ctypes.c_void_p
+            x11.XGetImage.argtypes = [ctypes.c_void_p, c_ulong, c_int, c_int, c_uint, c_uint, c_ulong, c_int]
+            x11.XDestroyImage.restype = c_int
+            x11.XDestroyImage.argtypes = [ctypes.c_void_p]
+
+            img_ptr = x11.XGetImage(disp, win_id, 0, 0, w, h, 0xFFFFFFFF, 2)
+            if not img_ptr:
+                return None
+
+            class _XImage(Structure):
+                _fields_ = [
+                    ("width", c_int), ("height", c_int),
+                    ("xoffset", c_int), ("format", c_int),
+                    ("data", ctypes.c_void_p),
+                    ("byte_order", c_int), ("bitmap_unit", c_int),
+                    ("bitmap_bit_order", c_int), ("bitmap_pad", c_int),
+                    ("depth", c_int), ("bytes_per_line", c_int),
+                    ("bits_per_pixel", c_int)
+                ]
+
+            ximage = _XImage.from_address(img_ptr)
+            raw_bytes = ctypes.string_at(ximage.data, ximage.bytes_per_line * h)
+            x11.XDestroyImage(img_ptr)
+
+            img = Image.frombytes("RGB", (w, h), raw_bytes, "raw", "BGRX")
+            if scale != 1.0:
+                new_w = max(320, int(w * scale))
+                new_h = max(240, int(h * scale))
+                img = img.resize((new_w, new_h), Image.BILINEAR)
+
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=quality, optimize=True)
+            return buf.getvalue()
+        finally:
+            x11.XSetErrorHandler(old_handler)
             x11.XCloseDisplay(disp)
-            return None
-        w, h = attrs.width, attrs.height
-        if w < 100 or h < 100:
-            x11.XCloseDisplay(disp)
-            return None
-
-        x11.XGetImage.restype = ctypes.c_void_p
-        x11.XGetImage.argtypes = [ctypes.c_void_p, c_ulong, c_int, c_int, c_uint, c_uint, c_ulong, c_int]
-        x11.XDestroyImage.restype = c_int
-        x11.XDestroyImage.argtypes = [ctypes.c_void_p]
-
-        img_ptr = x11.XGetImage(disp, win_id, 0, 0, w, h, 0xFFFFFFFF, 2)
-        if not img_ptr:
-            x11.XCloseDisplay(disp)
-            return None
-
-        class _XImage(Structure):
-            _fields_ = [
-                ("width", c_int), ("height", c_int),
-                ("xoffset", c_int), ("format", c_int),
-                ("data", ctypes.c_void_p),
-                ("byte_order", c_int), ("bitmap_unit", c_int),
-                ("bitmap_bit_order", c_int), ("bitmap_pad", c_int),
-                ("depth", c_int), ("bytes_per_line", c_int),
-                ("bits_per_pixel", c_int)
-            ]
-
-        ximage = _XImage.from_address(img_ptr)
-        raw_bytes = ctypes.string_at(ximage.data, ximage.bytes_per_line * h)
-        x11.XDestroyImage(img_ptr)
-        x11.XCloseDisplay(disp)
-
-        img = Image.frombytes("RGB", (w, h), raw_bytes, "raw", "BGRX")
-        if scale != 1.0:
-            new_w = max(320, int(w * scale))
-            new_h = max(240, int(h * scale))
-            img = img.resize((new_w, new_h), Image.BILINEAR)
 
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=quality, optimize=False)
