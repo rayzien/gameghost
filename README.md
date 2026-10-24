@@ -1,3 +1,30 @@
+# GameGhost v7.6.0 — Termux-X11 Video Pipeline, Wayland ScreenCast & Display :1 Sync Release
+
+> **High-Performance PC Gaming Handheld Cast & Universal Controller Subsystem**  
+> *Created by rayzien & pheonix14*  
+> *Based on CPUGhost — works exactly like PlayStation Portal (PS Portal) and cloud gaming, casting local PC games directly to phone anywhere in range.*
+
+GameGhost v7.6.0 resolves all video streaming issues on **Android Termux with Termux-X11** and Linux hosts. It brings native Mutter ScreenCast PipeWire capture for Wayland environments, eliminates black screen voids with direct game window capture fallbacks, auto-synchronizes Termux-X11 displays across `:1`, `:0`, and `:2`, and updates client rendering heuristics for instant frame display.
+
+---
+
+## What is New in v7.6.0
+
+1. **Wayland ScreenCast & Zero-Black-Screen Pipeline**:
+   - Integrated hardware-accelerated Mutter ScreenCast (`org.gnome.Mutter.ScreenCast`) with PipeWire GStreamer pipeline for zero-black-screen PC streaming on Wayland.
+   - Intelligent black-screen detection: automatically detects blank/black frames from Xwayland root capture and falls back to direct `XGetImage` window capture of active game windows or styled host status.
+
+2. **Termux-X11 Display :1 / :0 Process Synchronization**:
+   - Added running process inspection to automatically detect whether Termux-X11 is serving on display `:1` or `:0`.
+   - Prevented conflicts when multiple sockets exist in `/tmp` and `${PREFIX}/tmp`.
+   - Auto-launches Termux-X11 daemon on the active target display with `-legacy-drawing -ac`.
+
+3. **Client Video Decoupling & Display Scaling**:
+   - Timed out black-screen loading banner to prevent permanently covering active game scenes.
+   - Flawless full-screen scaling on high-resolution mobile phone displays in Termux-X11.
+
+---
+
 # GameGhost v1.7.3 — Termux-X11 Stream Engine, Auto-Focus & Performance Release
 
 > **High-Performance PC Gaming Handheld Cast & Universal Controller Subsystem**  

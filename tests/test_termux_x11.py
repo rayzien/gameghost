@@ -11,14 +11,15 @@ from gameghost.stream_server import _activate_game_window
 
 
 class TestTermuxX11AndStreaming(unittest.TestCase):
-    def test_version_v1_7_3(self):
-        """Verify release version is synchronized at v1.7.3."""
-        self.assertEqual(gameghost.__version__, "1.7.3")
-        self.assertEqual(get_current_version(), "1.7.3")
+    def test_version_v7_6_0(self):
+        """Verify release version is synchronized at v7.6.0."""
+        self.assertEqual(gameghost.__version__, "7.6.0")
+        self.assertEqual(get_current_version(), "7.6.0")
 
     def test_termux_display_environment_detection(self):
         """Verify Termux-X11 display variable logic."""
-        prefix_tmp = "/tmp/test_termux_tmp"
+        tmp_base = os.environ.get("TMPDIR", "/data/data/com.termux/files/usr/tmp" if os.path.exists("/data/data/com.termux") else "/tmp")
+        prefix_tmp = f"{tmp_base}/test_termux_tmp_{os.getpid()}"
         os.makedirs(f"{prefix_tmp}/.X11-unix", exist_ok=True)
         sock_path = f"{prefix_tmp}/.X11-unix/X1"
         with open(sock_path, "w") as f:
@@ -26,7 +27,7 @@ class TestTermuxX11AndStreaming(unittest.TestCase):
 
         # Simulate detection
         detected = ":0"
-        for n in ("0", "1", "2"):
+        for n in ("1", "0", "2"):
             if os.path.exists(f"{prefix_tmp}/.X11-unix/X{n}"):
                 detected = f":{n}"
                 break
@@ -45,15 +46,16 @@ class TestTermuxX11AndStreaming(unittest.TestCase):
             "MESA_LOADER_DRIVER_OVERRIDE": "llvmpipe",
             "SDL_RENDER_DRIVER": "software"
         }):
-            with patch("subprocess.Popen") as mock_popen:
-                mock_popen.return_value = MagicMock(pid=12345)
-                launch_game("dmc5")
-                self.assertTrue(mock_popen.called)
-                env_used = mock_popen.call_args[1].get("env", {})
-                self.assertNotIn("LIBGL_ALWAYS_SOFTWARE", env_used)
-                self.assertNotIn("GALLIUM_DRIVER", env_used)
-                self.assertNotIn("MESA_LOADER_DRIVER_OVERRIDE", env_used)
-                self.assertNotIn("SDL_RENDER_DRIVER", env_used)
+            with patch("os.path.exists", return_value=True):
+                with patch("subprocess.Popen") as mock_popen:
+                    mock_popen.return_value = MagicMock(pid=12345)
+                    launch_game("dmc5")
+                    self.assertTrue(mock_popen.called)
+                    env_used = mock_popen.call_args[1].get("env", {})
+                    self.assertNotIn("LIBGL_ALWAYS_SOFTWARE", env_used)
+                    self.assertNotIn("GALLIUM_DRIVER", env_used)
+                    self.assertNotIn("MESA_LOADER_DRIVER_OVERRIDE", env_used)
+                    self.assertNotIn("SDL_RENDER_DRIVER", env_used)
 
     def test_client_frame_queue_non_blocking(self):
         """Verify frame queue handles put_nowait and drop without blocking."""
@@ -80,6 +82,22 @@ class TestTermuxX11AndStreaming(unittest.TestCase):
         """Verify _activate_game_window handles invalid/dummy window safely without crashing."""
         res = _activate_game_window(0x999999)
         self.assertIsInstance(res, bool)
+
+    def test_capture_x11_window_safe(self):
+        """Verify _capture_x11_window handles invalid/dummy window without raising exceptions."""
+        from gameghost.stream_server import _capture_x11_window
+        res = _capture_x11_window(0x999999)
+        self.assertIsNone(res)
+
+    def test_wayland_screen_capture_safe_init(self):
+        """Verify WaylandScreenCapture gracefully handles environments without Wayland."""
+        from gameghost.stream_server import WaylandScreenCapture
+        cap = WaylandScreenCapture()
+        # In mock / test environment without Mutter / GStreamer, active is False
+        self.assertIsInstance(cap.active, bool)
+        fid, frame = cap.get_latest_frame()
+        self.assertEqual(fid, 0)
+        cap.close()
 
 
 if __name__ == "__main__":

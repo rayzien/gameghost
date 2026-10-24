@@ -23,16 +23,21 @@ if [ -d "/data/data/com.termux/files/usr/bin" ]; then
 fi
 export PATH="${HOME}/.local/bin:${PATH}"
 
-# Ensure DISPLAY & XAUTHORITY
+# Ensure DISPLAY & XAUTHORITY (Prioritize running Termux-X11 :1 or :0 displays)
 if [ -z "$DISPLAY" ]; then
-    for num in 0 1 2; do
-        if [ -S "/tmp/.X11-unix/X${num}" ] || [ -S "${PREFIX}/tmp/.X11-unix/X${num}" ] || [ -S "/data/data/com.termux/files/usr/tmp/.X11-unix/X${num}" ]; then
-            export DISPLAY=":${num}"
-            break
+    RUNNING_X11_DISP=$(ps -ef 2>/dev/null | grep -E "termux-x11" | grep -v "grep" | grep -oE ":[0-9]+" | head -n 1)
+    if [ -n "$RUNNING_X11_DISP" ]; then
+        export DISPLAY="$RUNNING_X11_DISP"
+    else
+        for num in 1 0 2; do
+            if [ -S "/tmp/.X11-unix/X${num}" ] || [ -S "${PREFIX}/tmp/.X11-unix/X${num}" ] || [ -S "/data/data/com.termux/files/usr/tmp/.X11-unix/X${num}" ]; then
+                export DISPLAY=":${num}"
+                break
+            fi
+        done
+        if [ -z "$DISPLAY" ] && [ -d "/data/data/com.termux/files" ]; then
+            export DISPLAY=":0"
         fi
-    done
-    if [ -z "$DISPLAY" ] && [ -d "/data/data/com.termux/files" ]; then
-        export DISPLAY=":0"
     fi
 fi
 
@@ -68,10 +73,11 @@ if [ -n "$TERMUX_VERSION" ] || [ -d "/data/data/com.termux/files" ]; then
     esac
 
     if [ "$IS_GUI" = "1" ]; then
+        TARGET_DISP="${DISPLAY:-:0}"
         # Ensure Termux-X11 server daemon is active with -legacy-drawing
         if ! pgrep -f "termux-x11" >/dev/null 2>&1; then
-            echo "[INFO] Starting Termux-X11 display server (:0) with -legacy-drawing..."
-            nohup termux-x11 :0 -legacy-drawing -ac >/dev/null 2>&1 &
+            echo "[INFO] Starting Termux-X11 display server (${TARGET_DISP}) with -legacy-drawing..."
+            nohup termux-x11 "${TARGET_DISP}" -legacy-drawing -ac >/dev/null 2>&1 &
             for _ in 1 2 3 4 5 6 7 8; do
                 if pgrep -f "termux-x11" >/dev/null 2>&1; then
                     break
@@ -80,7 +86,7 @@ if [ -n "$TERMUX_VERSION" ] || [ -d "/data/data/com.termux/files" ]; then
             done
             sleep 0.3
         fi
-        export DISPLAY="${DISPLAY:-:0}"
+        export DISPLAY="${TARGET_DISP}"
 
         # Bring Termux-X11 companion app to foreground
         if command -v am >/dev/null 2>&1; then

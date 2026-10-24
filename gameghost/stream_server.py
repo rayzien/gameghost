@@ -181,6 +181,226 @@ def _find_target_game_window():
         return None, 0, 0
 
 
+def _capture_x11_window(win_id: int, quality: int = 80, scale: float = 1.0) -> Optional[bytes]:
+    """Direct hardware capture of an active X11 / Xwayland game window via XGetImage."""
+    try:
+        x11 = ctypes.cdll.LoadLibrary("libX11.so.6")
+        disp = x11.XOpenDisplay(None)
+        if not disp:
+            return None
+        attrs = _XWindowAttributes()
+        if not x11.XGetWindowAttributes(disp, win_id, byref(attrs)):
+            x11.XCloseDisplay(disp)
+            return None
+        w, h = attrs.width, attrs.height
+        if w < 100 or h < 100:
+            x11.XCloseDisplay(disp)
+            return None
+
+        x11.XGetImage.restype = ctypes.c_void_p
+        x11.XGetImage.argtypes = [ctypes.c_void_p, c_ulong, c_int, c_int, c_uint, c_uint, c_ulong, c_int]
+        x11.XDestroyImage.restype = c_int
+        x11.XDestroyImage.argtypes = [ctypes.c_void_p]
+
+        img_ptr = x11.XGetImage(disp, win_id, 0, 0, w, h, 0xFFFFFFFF, 2)
+        if not img_ptr:
+            x11.XCloseDisplay(disp)
+            return None
+
+        class _XImage(Structure):
+            _fields_ = [
+                ("width", c_int), ("height", c_int),
+                ("xoffset", c_int), ("format", c_int),
+                ("data", ctypes.c_char_p),
+                ("byte_order", c_int), ("bitmap_unit", c_int),
+                ("bitmap_bit_order", c_int), ("bitmap_pad", c_int),
+                ("depth", c_int), ("bytes_per_line", c_int),
+                ("bits_per_pixel", c_int)
+            ]
+
+        ximage = _XImage.from_address(img_ptr)
+        raw_bytes = ctypes.string_at(ximage.data, ximage.bytes_per_line * h)
+        x11.XDestroyImage(img_ptr)
+        x11.XCloseDisplay(disp)
+
+        img = Image.frombytes("RGB", (w, h), raw_bytes, "raw", "BGRX")
+        if scale != 1.0:
+            new_w = max(320, int(w * scale))
+            new_h = max(240, int(h * scale))
+            img = img.resize((new_w, new_h), Image.BILINEAR)
+
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=quality, optimize=False)
+        return buf.getvalue()
+    except Exception:
+        return None
+
+
+class WaylandScreenCapture:
+    """
+    Direct hardware-accelerated screen capture on Wayland (GNOME/Mutter).
+    Pulls video frames via Mutter ScreenCast D-Bus and PipeWire without black screen.
+    """
+    def __init__(self, quality: int = 80, scale: float = 1.0):
+        self.quality = quality
+        self.scale = scale
+        self.bus = None
+        self.sc_session_path = None
+        self.stream_path = None
+        self.pipewire_node = None
+        self.pipeline = None
+        self.sink = None
+        self.width = 1920
+        self.height = 1080
+        self.active = False
+        self.latest_frame: Optional[bytes] = None
+        self.frame_id: int = 0
+        self.lock = threading.Lock()
+        self._reader_thread: Optional[threading.Thread] = None
+        self._init_stream()
+
+    def _init_stream(self):
+        try:
+            import gi
+            gi.require_version("Gio", "2.0")
+            gi.require_version("Gst", "1.0")
+            from gi.repository import Gio, GLib, Gst
+            Gst.init(None)
+
+            self.bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
+
+            # Create Mutter ScreenCast session
+            res = self.bus.call_sync(
+                "org.gnome.Mutter.ScreenCast",
+                "/org/gnome/Mutter/ScreenCast",
+                "org.gnome.Mutter.ScreenCast",
+                "CreateSession",
+                GLib.Variant("(a{sv})", ({},)),
+                None, Gio.DBusCallFlags.NONE, -1, None
+            )
+            self.sc_session_path = res.unpack()[0]
+
+            # Record primary monitor
+            res_stream = self.bus.call_sync(
+                "org.gnome.Mutter.ScreenCast",
+                self.sc_session_path,
+                "org.gnome.Mutter.ScreenCast.Session",
+                "RecordMonitor",
+                GLib.Variant("(sa{sv})", ("", {})),
+                None, Gio.DBusCallFlags.NONE, -1, None
+            )
+            self.stream_path = res_stream.unpack()[0]
+
+            def on_signal(conn, sender_name, object_path, interface_name, signal_name, parameters, user_data):
+                if signal_name == "PipeWireStreamAdded":
+                    self.pipewire_node = parameters.unpack()[0]
+
+            self.bus.signal_subscribe(
+                "org.gnome.Mutter.ScreenCast",
+                "org.gnome.Mutter.ScreenCast.Stream",
+                "PipeWireStreamAdded",
+                self.stream_path,
+                None, Gio.DBusSignalFlags.NONE,
+                on_signal, None
+            )
+
+            # Start session
+            self.bus.call_sync(
+                "org.gnome.Mutter.ScreenCast",
+                self.sc_session_path,
+                "org.gnome.Mutter.ScreenCast.Session",
+                "Start",
+                None, None, Gio.DBusCallFlags.NONE, -1, None
+            )
+
+            loop = GLib.MainLoop()
+            def check_node():
+                if self.pipewire_node is not None:
+                    loop.quit()
+                    return False
+                return True
+            GLib.timeout_add(20, check_node)
+            GLib.timeout_add(2000, loop.quit)
+            loop.run()
+
+            if not self.pipewire_node:
+                self.close()
+                return
+
+            pipeline_str = (
+                f"pipewiresrc path={self.pipewire_node} ! videoconvert n-threads=2 ! "
+                f"jpegenc quality={self.quality} idct-method=ifast ! "
+                f"appsink name=sink emit-signals=True max-buffers=1 drop=True sync=False"
+            )
+            self.pipeline = Gst.parse_launch(pipeline_str)
+            self.sink = self.pipeline.get_by_name("sink")
+            self.pipeline.set_state(Gst.State.PLAYING)
+            self.active = True
+
+            self._reader_thread = threading.Thread(target=self._reader_loop, daemon=True)
+            self._reader_thread.start()
+
+        except Exception:
+            self.active = False
+            self.close()
+
+    def _reader_loop(self):
+        try:
+            import gi
+            gi.require_version("Gst", "1.0")
+            from gi.repository import Gst
+        except Exception:
+            return
+
+        while self.active and self.sink:
+            try:
+                sample = self.sink.emit("pull-sample")
+                if sample:
+                    buf = sample.get_buffer()
+                    caps = sample.get_caps()
+                    if caps and caps.get_size() > 0:
+                        s = caps.get_structure(0)
+                        if s.has_field("width") and s.has_field("height"):
+                            self.width = s.get_value("width")
+                            self.height = s.get_value("height")
+                    success, map_info = buf.map(Gst.MapFlags.READ)
+                    if success:
+                        data = bytes(map_info.data)
+                        buf.unmap(map_info)
+                        with self.lock:
+                            self.latest_frame = data
+                            self.frame_id += 1
+                else:
+                    time.sleep(0.005)
+            except Exception:
+                time.sleep(0.01)
+
+    def get_latest_frame(self) -> Tuple[int, Optional[bytes]]:
+        with self.lock:
+            return self.frame_id, self.latest_frame
+
+    def close(self):
+        self.active = False
+        try:
+            if self.pipeline:
+                self.pipeline.set_state(0)
+        except Exception:
+            pass
+
+        try:
+            if self.bus and self.sc_session_path:
+                from gi.repository import Gio
+                self.bus.call_sync(
+                    "org.gnome.Mutter.ScreenCast",
+                    self.sc_session_path,
+                    "org.gnome.Mutter.ScreenCast.Session",
+                    "Stop",
+                    None, None, Gio.DBusCallFlags.NONE, -1, None
+                )
+        except Exception:
+            pass
+
+
 class GameStreamServer:
     """
     High-performance, low-latency game video & input streaming server.
@@ -260,6 +480,20 @@ class GameStreamServer:
 
     def _capture_worker(self):
         """Dedicated thread continuously grabbing desktop frames at high FPS."""
+        is_wayland = bool(os.environ.get("WAYLAND_DISPLAY") or os.environ.get("XDG_SESSION_TYPE") == "wayland")
+        wayland_cap = None
+        if is_wayland:
+            try:
+                wayland_cap = WaylandScreenCapture(quality=self.quality, scale=self.scale)
+                if wayland_cap.active:
+                    console.print(f"[bold green][STREAM] Attached to Wayland screen ({wayland_cap.width}x{wayland_cap.height}) via Mutter ScreenCast + PipeWire[/bold green]")
+                else:
+                    wayland_cap = None
+            except Exception:
+                wayland_cap = None
+
+        self.wayland_cap = wayland_cap
+
         def _try_init_sct():
             if "DISPLAY" not in os.environ and os.path.exists("/tmp/.X11-unix/X0"):
                 os.environ["DISPLAY"] = ":0"
@@ -282,8 +516,9 @@ class GameStreamServer:
         last_init_attempt = time.time()
         current_target_win = None
         last_win_check = 0
+        last_wayland_frame_id = -1
 
-        if not sct:
+        if not sct and not (wayland_cap and wayland_cap.active):
             console.print("[STREAM] Display capture not immediately ready. Activating standby game visualizer until display connects.")
 
         frame_count = 0
@@ -294,14 +529,23 @@ class GameStreamServer:
             t0 = time.time()
             jpeg_bytes = None
 
-            if sct is None or monitor is None:
-                if t0 - last_init_attempt >= 1.5:
-                    last_init_attempt = t0
-                    sct, monitor = _try_init_sct()
-                    current_target_win = None
+            # 1. Primary: Wayland ScreenCast capture
+            if wayland_cap and wayland_cap.active:
+                f_id, f_bytes = wayland_cap.get_latest_frame()
+                if f_bytes and f_id != last_wayland_frame_id:
+                    last_wayland_frame_id = f_id
+                    jpeg_bytes = f_bytes
+
+            # 2. Re-init sct if needed
+            if not jpeg_bytes:
+                if sct is None or monitor is None:
+                    if t0 - last_init_attempt >= 1.5:
+                        last_init_attempt = t0
+                        sct, monitor = _try_init_sct()
+                        current_target_win = None
 
             # Periodically scan for active game window to bring it to focus and active workspace
-            if sct and (t0 - last_win_check >= 1.5 or current_target_win is None):
+            if t0 - last_win_check >= 1.5 or current_target_win is None:
                 last_win_check = t0
                 twin, tw, th = _find_target_game_window()
                 if twin and twin != current_target_win:
@@ -311,20 +555,35 @@ class GameStreamServer:
                 elif not twin and current_target_win is not None:
                     current_target_win = None
 
-            # Stream composited primary desktop monitor (where active game is focused)
-            if sct and monitor:
+            # 3. MSS Root Window Capture with black-screen detection
+            if not jpeg_bytes and sct and monitor:
                 try:
                     raw = sct.grab(monitor)
-                    img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
+                    is_black = False
+                    if len(raw.bgra) > 100:
+                        # Fast check for pure black frame from Xwayland/blank monitor
+                        is_black = (
+                            raw.bgra[0:16] == b'\x00' * 16 and
+                            raw.bgra[len(raw.bgra)//2:len(raw.bgra)//2 + 16] == b'\x00' * 16 and
+                            raw.bgra[-16:] == b'\x00' * 16
+                        )
 
-                    if self.scale != 1.0:
-                        new_w = max(320, int(img.width * self.scale))
-                        new_h = max(240, int(img.height * self.scale))
-                        img = img.resize((new_w, new_h), Image.BILINEAR)
+                    # If root capture is black, try direct window capture of target game
+                    if is_black and current_target_win:
+                        win_frame = _capture_x11_window(current_target_win, quality=self.quality, scale=self.scale)
+                        if win_frame:
+                            jpeg_bytes = win_frame
 
-                    buf = io.BytesIO()
-                    img.save(buf, format="JPEG", quality=self.quality, optimize=False)
-                    jpeg_bytes = buf.getvalue()
+                    if not jpeg_bytes and not is_black:
+                        img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
+                        if self.scale != 1.0:
+                            new_w = max(320, int(img.width * self.scale))
+                            new_h = max(240, int(img.height * self.scale))
+                            img = img.resize((new_w, new_h), Image.BILINEAR)
+
+                        buf = io.BytesIO()
+                        img.save(buf, format="JPEG", quality=self.quality, optimize=False)
+                        jpeg_bytes = buf.getvalue()
                 except Exception:
                     try:
                         sct.close()
@@ -334,6 +593,7 @@ class GameStreamServer:
                     monitor = None
                     last_init_attempt = t0
 
+            # 4. Fallback: Styled Host Standby Frame (never emit raw black void)
             if not jpeg_bytes:
                 jpeg_bytes = self._render_standby_frame(t0)
 
@@ -358,10 +618,8 @@ class GameStreamServer:
                 if fps_adjust_interval >= 10:
                     fps_adjust_interval = 0
                     if work_time > target_delay * 0.90:
-                        # Capture is heavy, lower FPS towards min_fps
                         self.fps = max(self.min_fps, self.fps - 2)
                     elif work_time < target_delay * 0.65 and self.fps < self.max_fps:
-                        # Plenty of headroom, scale up FPS towards max_fps
                         self.fps = min(self.max_fps, self.fps + 1)
 
             if rem > 0.001:
@@ -500,4 +758,9 @@ class GameStreamServer:
 
     def stop(self):
         self.running = False
+        if hasattr(self, "wayland_cap") and self.wayland_cap:
+            try:
+                self.wayland_cap.close()
+            except Exception:
+                pass
         self.gamepad.close()
