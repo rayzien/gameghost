@@ -283,7 +283,12 @@ def clear_host_pid():
 def is_host_running() -> bool:
     pid = get_host_pid()
     if pid is not None and pid != os.getpid():
-        return True
+        try:
+            os.kill(pid, 0)
+            return True
+        except (OSError, ProcessLookupError):
+            clear_host_pid()
+            return False
     return False
 
 

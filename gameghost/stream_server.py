@@ -568,22 +568,16 @@ class GameStreamServer:
                             raw.bgra[-16:] == b'\x00' * 16
                         )
 
-                    # If root capture is black, try direct window capture of target game
-                    if is_black and current_target_win:
-                        win_frame = _capture_x11_window(current_target_win, quality=self.quality, scale=self.scale)
-                        if win_frame:
-                            jpeg_bytes = win_frame
+                    # Stream root display safely without calling XGetImage on unmapped windows
+                    img = Image.frombytes("RGB", (raw.width, raw.height) if hasattr(raw, "width") else raw.size, raw.bgra, "raw", "BGRX")
+                    if self.scale != 1.0:
+                        new_w = max(320, int(img.width * self.scale))
+                        new_h = max(240, int(img.height * self.scale))
+                        img = img.resize((new_w, new_h), Image.BILINEAR)
 
-                    if not jpeg_bytes and not is_black:
-                        img = Image.frombytes("RGB", raw.size, raw.bgra, "raw", "BGRX")
-                        if self.scale != 1.0:
-                            new_w = max(320, int(img.width * self.scale))
-                            new_h = max(240, int(img.height * self.scale))
-                            img = img.resize((new_w, new_h), Image.BILINEAR)
-
-                        buf = io.BytesIO()
-                        img.save(buf, format="JPEG", quality=self.quality, optimize=False)
-                        jpeg_bytes = buf.getvalue()
+                    buf = io.BytesIO()
+                    img.save(buf, format="JPEG", quality=self.quality, optimize=False)
+                    jpeg_bytes = buf.getvalue()
                 except Exception:
                     try:
                         sct.close()
