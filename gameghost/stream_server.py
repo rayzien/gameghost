@@ -507,26 +507,14 @@ class GameStreamServer:
                 elif not twin and current_target_win is not None:
                     current_target_win = None
 
-            # 1. Primary: Direct Game Window Capture (ultra-low latency hardware capture via XGetImage)
-            if current_target_win:
-                try:
-                    win_frame = _capture_x11_window(current_target_win, quality=self.quality, scale=self.scale)
-                    if win_frame:
-                        jpeg_bytes = win_frame
-                        current_source = f"Game Window ({hex(current_target_win)})"
-                    else:
-                        current_target_win = None
-                except Exception:
-                    current_target_win = None
-
-            # 2. Desktop Mode: Hardware-accelerated Mutter ScreenCast capture (Wayland)
-            if not jpeg_bytes and wayland_cap and wayland_cap.active:
+            # 1. Desktop Mode: Hardware-accelerated Mutter ScreenCast capture (Wayland)
+            if wayland_cap and wayland_cap.active:
                 f_id, f_bytes = wayland_cap.get_latest_frame()
                 if f_bytes:
                     jpeg_bytes = f_bytes
                     current_source = "Wayland Desktop (Mutter + PipeWire)"
 
-            # 3. MSS Root Window Capture (X11 only, with black screen filter)
+            # 2. MSS Root Window Capture (X11 / Xwayland, safe without XGetImage SEGV)
             if not jpeg_bytes:
                 if sct is None or monitor is None:
                     if t0 - last_init_attempt >= 2.0:
