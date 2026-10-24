@@ -7,7 +7,7 @@ import asyncio
 import threading
 import ctypes
 from ctypes import byref, c_uint, c_ulong, c_int, c_long, Structure, POINTER
-from typing import Set, Optional
+from typing import Set, Optional, Tuple, Dict, Any, List
 from PIL import Image, ImageDraw
 import websockets
 from rich.console import Console

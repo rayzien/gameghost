@@ -290,10 +290,22 @@ def is_host_running() -> bool:
 def get_local_ip() -> str:
     """
     Find the best local IP address for phone connection.
-    Prioritizes real LAN interfaces (swlan0, wlan0, eth0, en0)
-    and excludes loopbacks, virtual VPN interfaces (tun, tap, rmnet).
+    Prioritizes real LAN interfaces (wlp*, wlan*, eth*, enp*)
+    and excludes loopbacks, virtual VPN interfaces (pvpn*, tun*, tap*, rmnet*).
     """
-    # 1. Try ifconfig parsing for physical / Wi-Fi / Hotspot interfaces
+    # 0. Route lookup directly to phone if reachable
+    for target in ("10.176.124.51", "192.168.43.1", "192.168.1.1"):
+        try:
+            out = subprocess.check_output(["ip", "route", "get", target], stderr=subprocess.DEVNULL).decode("utf-8")
+            m = re.search(r"src\s+(\d+\.\d+\.\d+\.\d+)", out)
+            if m:
+                ip = m.group(1)
+                if not ip.startswith("127.") and not ip.startswith("10.2.0."):
+                    return ip
+        except Exception:
+            pass
+
+    # 1. Try ifconfig/ip parsing for physical / Wi-Fi / Hotspot interfaces
     try:
         output = subprocess.check_output(["ifconfig"], stderr=subprocess.DEVNULL).decode("utf-8")
         candidates = []
@@ -301,14 +313,14 @@ def get_local_ip() -> str:
             lines = block.strip().split("\n")
             if not lines or not lines[0]:
                 continue
-            iface = lines[0].split(":")[0].strip()
-            if iface in ("lo", "tun0") or iface.startswith("tun") or iface.startswith("rmnet") or iface.startswith("dummy"):
+            iface = lines[0].split(":")[0].strip().lower()
+            if iface in ("lo", "tun0") or any(iface.startswith(p) for p in ("tun", "tap", "pvpn", "proton", "rmnet", "dummy", "docker", "virbr", "veth")):
                 continue
             m = re.search(r"inet\s+(\d+\.\d+\.\d+\.\d+)", block)
             if m:
                 ip = m.group(1)
-                if not ip.startswith("127.") and not ip.startswith("169.254."):
-                    if "wlan" in iface or "swlan" in iface or "eth" in iface:
+                if not ip.startswith("127.") and not ip.startswith("169.254.") and not ip.startswith("10.2.0."):
+                    if "wl" in iface or "eth" in iface or "en" in iface:
                         return ip
                     candidates.append(ip)
         if candidates:
